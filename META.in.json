@@ -13,38 +13,38 @@
 
     "X_comment": "REQUIRED. Name of distribution.",
     "X_comment": "Note! Distribution names currently can't contain spaces.",
-    "name": "DISTRIBUTION_NAME",
+    "name": "object_reference",
 
     "X_comment": "REQUIRED. Version of the distribution. http://pgxn.org/spec/#version",
     "version": "0.1.0",
 
     "X_comment": "REQUIRED. Short description of distribution.",
-    "abstract": "ABSTRACT",
+    "abstract": "Provides immutable references to Postgres objects.",
 
     "X_comment": "Optional. \"description\": A longer description of the distribution. http://pgxn.org/spec/#description",
     "description": "",
 
     "X_comment": "REQUIRED. Contact info for distribution maintainers. http://pgxn.org/spec/#maintainer",
-    "maintainer": [ "Your Name <Your@Email>" ],
+    "maintainer": [ "Jim Nasby <Jim.Nasby@BlueTreble.com>" ],
 
     "X_comment": "Optional. Status of distribution. Allowed values: unstable, testing, stable",
     "release_status": "unstable",
 
     "X_comment": "REQUIRED. License(s) distribution is released under. http://pgxn.org/spec/#license",
-    "license": "postgresql",
+    "license": "bsd",
 
     "X_comment": "REQUIRED. Specifies extensions contained in this distribution. Each key is the name of an extension. http://pgxn.org/spec/#provides",
     "X_comment": "Note! Extension names currently can't contain spaces.",
     "provides": {
         "EXTENSION_NAME": {
             "X_comment": "REQUIRED. File containing extension.",
-            "file": "sql/file.sql",
+            "file": "sql/object_reference.sql",
 
             "X_comment": "REQUIRED. Version the extension is at.",
             "version": "0.1.0",
 
             "X_comment": "Optional: \"abstract\": Description of the extension.",
-            "abstract": "ABSTRACT",
+            "abstract": "Provides immutable references to Postgres objects.",
 
             "X_comment": "Optional: \"docfile\": filesystem path to document file for extension.",
             "docfile": "",
@@ -58,13 +58,13 @@
 
     "X_comment": "Optional. \"resources\": Web resources available for this distribution. http://pgxn.org/spec/#resources",
     "resources": {
-        "homepage": "http://github.com/BlueTreble/test_factory/",
+        "homepage": "http://github.com/decibel/object_reference/",
         "bugtracker": {
-            "web": "http://github.com/BlueTreble/test_factory/issues"
+            "web": "http://github.com/decibel/object_reference/issues"
         },
         "repository": {
-            "url": "git://github.com/BlueTreble/test_factory.git",
-            "web": "http://github.com/BlueTreble/test_factory/",
+            "url": "git://github.com/decibel/object_reference.git",
+            "web": "http://github.com/decibel/object_reference/",
             "type": "git"
         }
     },
