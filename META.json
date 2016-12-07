@@ -35,7 +35,7 @@
     "X_comment": "REQUIRED. Specifies extensions contained in this distribution. Each key is the name of an extension. http://pgxn.org/spec/#provides",
     "X_comment": "Note! Extension names currently can't contain spaces.",
     "provides": {
-        "EXTENSION_NAME": {
+        "object_reference": {
             "X_comment": "REQUIRED. File containing extension.",
             "file": "sql/object_reference.sql",
 
@@ -46,6 +46,7 @@
             "abstract": "Provides immutable references to Postgres objects.",
 
             "X_comment": "Optional: \"docfile\": filesystem path to document file for extension.",
+            "docfile": "doc/object_reference.adoc",
 
             "X_end": ""
         }
