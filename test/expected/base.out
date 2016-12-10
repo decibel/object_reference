@@ -1,0 +1,11 @@
+\set ECHO none
+cat_tools|0.2.0|tap|Tools for intorfacing with the catalog
+count_nulls|0.9.6|tap|Count the number of null arguments
+object_reference|0.1.0|object_reference|Provides reference IDs for database objects
+pgtap|0.98.0|tap|Unit testing for PostgreSQL
+plpgsql|1.0|pg_catalog|PL/pgSQL procedural language
+1..4
+ok 1 - CREATE TEMP TABLE test_object_id AS SELECT object_reference.object__getsert('table', 'test_table') AS object_id;
+ok 2 - Existing object works, provides correct ID
+ok 3 - Verify count_nulls extension can not be relocated
+ok 4 - Still works after moving the count_nulls extension

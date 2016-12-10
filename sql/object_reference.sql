@@ -1,5 +1,17 @@
 SET LOCAL client_min_messages = WARNING;
 
+-- This BS is because count_nulls is relocatable, so could be in any schema
+DO $$
+BEGIN
+  RAISE DEBUG 'initial search_path = %', current_setting('search_path');
+  PERFORM set_config('search_path', current_setting('search_path') || ', ' || extnamespace::regnamespace::text, true) -- true = local only
+    FROM pg_extension
+    WHERE extname = 'count_nulls'
+  ;
+  RAISE DEBUG 'search_path changed to %', current_setting('search_path');
+END
+$$;
+
 DO $$
 BEGIN
   CREATE ROLE object_reference__usage NOLOGIN;
@@ -24,7 +36,7 @@ BEGIN
 END
 $body$;
 
-CREATE SCHEMA object_reference;
+-- Schema already created via CREATE EXTENSION
 GRANT USAGE ON SCHEMA object_reference TO object_reference__usage;
 CREATE SCHEMA _object_reference;
 
@@ -80,18 +92,14 @@ CREATE TABLE _object_reference.object(
   -- I don't think we should ever have regrole since we can't create event triggers on it
 --  , regrole       regrole -- SED: REQUIRES 9.5!
   , regtype       regtype
-  , CONSTRAINT only_one_object_field_may_be_not_null
-      CHECK( not_null_count(
-          regclass::text
-          , regconfig::text
-          , regdictionary::text
-          --, regnamespace -- SED: REQUIRES 9.5!
-          , regoperator::text
-          , regprocedure::text
-          , regtype::text
-        ) = 1
-      )
 );
+CREATE TRIGGER null_count
+  AFTER INSERT OR UPDATE
+  ON _object_reference.object
+  FOR EACH ROW EXECUTE PROCEDURE not_null_count_trigger(
+    4, 'only one object reference field may be set'
+  )
+;
 CREATE UNIQUE INDEX object__u_regclass ON _object_reference.object(regclass) WHERE regclass IS NOT NULL;
 CREATE UNIQUE INDEX object__u_regconfig ON _object_reference.object(regconfig) WHERE regconfig IS NOT NULL;
 CREATE UNIQUE INDEX object__u_regdictionary ON _object_reference.object(regdictionary) WHERE regdictionary IS NOT NULL;
@@ -107,8 +115,10 @@ DECLARE
   c_field CONSTANT name := _object_reference.object_type__field(object_type);
 
   c_select CONSTANT text := format(
-      'SELECT * FROM _object_reference.object WHERE %I = $1'
+      'SELECT * FROM _object_reference.object WHERE %I = $1%s'
       , c_field
+      -- reg* types need an explicit cast
+      , CASE WHEN c_field LIKE 'reg%' THEN '::' || c_field END
     )
   ;
 
@@ -126,7 +136,8 @@ BEGIN
       INTO r_obj
       USING object_name
     ;
-    IF FOUND THEN
+    RAISE DEBUG 'executing "%" using "%" returned "%", FOUND=%, NOT r_obj IS NULL = %', c_select, object_name, r_obj, FOUND, NOT r_obj IS NULL;
+    IF NOT r_obj IS NULL THEN
       RETURN r_obj.object_id;
     END IF;
 
@@ -136,7 +147,8 @@ BEGIN
         USING object_type, object_name
       ;
       RETURN r_obj.object_id;
-    --EXCEPTION WHEN 
+    EXCEPTION WHEN unique_violation THEN
+      NULL;
     END;
   END LOOP;
 
