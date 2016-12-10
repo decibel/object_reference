@@ -46,5 +46,6 @@ SELECT is(
   , 'Still works after moving the count_nulls extension'
 );
 
+\i test/pgxntool/finish.sql
 
 -- vi: expandtab sw=2 ts=2

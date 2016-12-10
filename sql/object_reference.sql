@@ -40,7 +40,7 @@ $body$;
 GRANT USAGE ON SCHEMA object_reference TO object_reference__usage;
 CREATE SCHEMA _object_reference;
 
-CREATE FUNCTION _object_reference.object_catalog__field(
+CREATE FUNCTION _object_reference.reg_type(
   object_catalog regclass
 ) RETURNS name LANGUAGE plpgsql IMMUTABLE
 SET search_path FROM CURRENT -- Ensure pg_catalog is in the search_path
@@ -49,8 +49,9 @@ DECLARE
   v_reg_type regtype; -- Set if there is a reg* type available
 BEGIN
   v_reg_type := cat_tools.object__reg_type(object_catalog);
-  IF v_reg_type IN (
-      'regclass'
+  IF v_reg_type NOT IN (
+      NULL -- This is OK
+      , 'regclass'
       , 'regconfig'
       , 'regdictionary'
       , 'regoperator'
@@ -58,24 +59,10 @@ BEGIN
       , 'regtype'
     )  
     THEN
-    RETURN v_reg_type;
-  END IF;
-
-  RETURN NULL;
-END
-$body$;
-CREATE FUNCTION _object_reference.object_type__field(
-  object_type   cat_tools.object_type
-) RETURNS name LANGUAGE plpgsql IMMUTABLE AS $body$
-DECLARE
-  c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
-  c_field name := _object_reference.object_catalog__field(c_catalog);
-BEGIN
-  IF c_field IS NULL THEN
     RAISE 'object type "%" is not yet supported', object_type;
   END IF;
 
-  RETURN c_field;
+  RETURN v_reg_type;
 END
 $body$;
   
@@ -92,6 +79,7 @@ CREATE TABLE _object_reference.object(
   -- I don't think we should ever have regrole since we can't create event triggers on it
 --  , regrole       regrole -- SED: REQUIRES 9.5!
   , regtype       regtype
+  , object_oid    oid
 );
 CREATE TRIGGER null_count
   AFTER INSERT OR UPDATE
@@ -110,33 +98,75 @@ CREATE UNIQUE INDEX object__u_regtype ON _object_reference.object(regtype) WHERE
 CREATE FUNCTION object_reference.object__getsert(
   object_type   cat_tools.object_type
   , object_name text
+  , secondary text DEFAULT NULL
 ) RETURNS int LANGUAGE plpgsql AS $body$
 DECLARE
-  c_field CONSTANT name := _object_reference.object_type__field(object_type);
+  c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
+  c_reg_type name := _object_reference.reg_type(c_catalog); -- Verifies regtype is supported, if there is one
+  c_lookup_field CONSTANT name := coalesce(c_reg_type, 'object_oid');
 
   c_select CONSTANT text := format(
-      'SELECT * FROM _object_reference.object WHERE %I = $1%s'
-      , c_field
-      -- reg* types need an explicit cast
-      , CASE WHEN c_field LIKE 'reg%' THEN '::' || c_field END
+      'SELECT * FROM _object_reference.object WHERE %I = $1::%I'
+      , c_lookup_field
+      , coalesce(c_reg_type, 'oid')
     )
   ;
 
   c_insert CONSTANT text := format(
-      'INSERT INTO _object_reference.object(object_type, original_name, %I) VALUES($1, $2, $2) RETURNING *'
-      , c_field
+      'INSERT INTO _object_reference.object(object_type, original_name, %I) VALUES($1, $2, $2::%I) RETURNING *'
+      , c_lookup_field
+      , coalesce(c_reg_type, 'oid')
     )
   ;
 
   r_obj _object_reference.object;
+  v_lookup_text text;
+  v_name_field text;
+
   i smallint;
+  sql text;
 BEGIN
+  IF c_reg_type IS NOT NULL THEN
+    /*
+     * Need to handle functions specially to support all the extra options they can have that regprocedure doesn't support.
+     */
+    IF object_type = 'function' THEN
+      v_lookup_text := cat_tools.regprocedure(object_name, secondary);
+    ELSE
+      v_lookup_text := object_name;
+    END IF;
+  ELSE
+    -- Need to do a manual lookup of the OID based on what catalog it is
+
+    /*
+     * Default case
+     *
+     * Get first 3 letters of catalog name after the 'pg_', since that's
+     * usually the field name. We also need to handle the possibility of
+     * 'pg_catalog.' being part of c_catalog.
+     */
+    v_name_field := substring(regexp_replace(c_catalog::text, '(pg_catalog\.)?pg_', ''), 1, 3);
+
+    v_name_field := CASE v_name_field
+        WHEN 'tri' THEN 'tg' -- pg_trigger
+        ELSE v_name_field
+      END || 'name'
+    ;
+    sql := format(
+      'SELECT oid FROM %s WHERE %I = %L'
+      , c_catalog -- No need to quote
+      , v_name_field
+      , object_name
+    );
+    EXECUTE sql INTO STRICT v_lookup_text;
+  END IF;
+
   FOR i IN 1..10 LOOP
     EXECUTE c_select
       INTO r_obj
-      USING object_name
+      USING v_lookup_text
     ;
-    RAISE DEBUG 'executing "%" using "%" returned "%", FOUND=%, NOT r_obj IS NULL = %', c_select, object_name, r_obj, FOUND, NOT r_obj IS NULL;
+    RAISE DEBUG 'executing "%" using "%" returned "%", FOUND=%, NOT r_obj IS NULL = %', c_select, v_lookup_text, r_obj, FOUND, NOT r_obj IS NULL;
     IF NOT r_obj IS NULL THEN
       RETURN r_obj.object_id;
     END IF;
@@ -144,7 +174,7 @@ BEGIN
     BEGIN
       EXECUTE c_insert
         INTO r_obj
-        USING object_type, object_name
+        USING object_type, v_lookup_text
       ;
       RETURN r_obj.object_id;
     EXCEPTION WHEN unique_violation THEN

@@ -10,3 +10,4 @@ ok 2 - Verify regclass field is correct
 ok 3 - Existing object works, provides correct ID
 ok 4 - Verify count_nulls extension can not be relocated
 ok 5 - Still works after moving the count_nulls extension
+# TRANSACTION INTENTIONALLY LEFT OPEN!
