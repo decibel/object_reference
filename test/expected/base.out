@@ -1,8 +1,10 @@
 \set ECHO none
-1..5
+1..7
 ok 1 - CREATE TEMP TABLE test_object_id AS SELECT object_reference.object__getsert('table', 'test_table') AS object_id;
 ok 2 - Verify regclass field is correct
 ok 3 - Existing object works, provides correct ID
-ok 4 - Verify count_nulls extension can not be relocated
-ok 5 - Still works after moving the count_nulls extension
+ok 4 - schema may not be specified separately for table objects
+ok 5 - secondary may not be specified separately for table objects
+ok 6 - Verify count_nulls extension can not be relocated
+ok 7 - Still works after moving the count_nulls extension
 # TRANSACTION INTENTIONALLY LEFT OPEN!

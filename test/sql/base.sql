@@ -7,6 +7,7 @@ CREATE TABLE test_table();
 SELECT plan(
   0
   +3 -- initial
+  +2 -- errors
   +2 -- move
 );
 
@@ -25,6 +26,18 @@ SELECT is(
   , 'Existing object works, provides correct ID'
 );
 
+SELECT throws_ok(
+  $$SELECT object_reference.object__getsert('table', 'test_table', schema:='test')$$
+  , NULL
+  , 'schema may not be specified separately for table objects'
+  , 'schema may not be specified separately for table objects'
+);
+SELECT throws_ok(
+  $$SELECT object_reference.object__getsert('table', 'test_table', secondary:='test')$$
+  , NULL
+  , 'secondary may not be specified separately for table objects'
+  , 'secondary may not be specified separately for table objects'
+);
 
 /*
  * I'm not sure if our extension would continue working if count_nulls was

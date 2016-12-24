@@ -99,6 +99,7 @@ CREATE FUNCTION object_reference.object__getsert(
   object_type   cat_tools.object_type
   , object_name text
   , secondary text DEFAULT NULL
+  , schema text DEFAULT NULL
 ) RETURNS int LANGUAGE plpgsql AS $body$
 DECLARE
   c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
@@ -126,7 +127,15 @@ DECLARE
   i smallint;
   sql text;
 BEGIN
+  IF object_type <> 'function' AND secondary IS NOT NULL THEN
+    RAISE 'secondary may not be specified separately for % objects', object_type;
+  END IF;
+
   IF c_reg_type IS NOT NULL THEN
+    -- Ensure schema is NULL
+    IF schema IS NOT NULL THEN
+      RAISE 'schema may not be specified separately for % objects', object_type;
+    END IF;
     /*
      * Need to handle functions specially to support all the extra options they can have that regprocedure doesn't support.
      */
