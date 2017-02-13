@@ -2,7 +2,7 @@
 
 \i test/load.sql
 
-CREATE TABLE test_table();
+CREATE TABLE test_table(col int);
 
 SELECT plan(
   0
@@ -10,8 +10,8 @@ SELECT plan(
 );
 
 SELECT lives_ok(
-  $$CREATE TEMP TABLE test_object AS SELECT object_reference.object__getsert('table', 'test_table'::regclass) AS object_id;$$
-  , $$CREATE TEMP TABLE test_object AS SELECT object_reference.object__getsert('table', 'test_table'::regclass) AS object_id;$$
+  $$CREATE TEMP TABLE test_object AS SELECT object_reference.object__getsert('table column', 'test_table'::regclass, 1) AS object_id;$$
+  , $$CREATE TEMP TABLE test_object AS SELECT object_reference.object__getsert('table column', 'test_table'::regclass, 1) AS object_id;$$
 );
 SELECT is(
   (SELECT count(*) FROM test_object)
