@@ -82,7 +82,7 @@ CREATE TABLE _object_reference.object(
   , object_oid    oid
   , object_names text[]                  NOT NULL
   , object_args  text[]                  NOT NULL
-  , CONSTRAINT object__u_object_names__object_args UNIQUE( object_names, object_args )
+  , CONSTRAINT object__u_object_names__object_args UNIQUE( object_type, object_names, object_args )
   , CONSTRAINT object__address_sanity
     -- pg_get_object_address will throw an error if anything is wrong, so the IS NOT NULL is mostly pointless
     CHECK( pg_catalog.pg_get_object_address(object_type::text, object_names, object_args) IS NOT NULL )
@@ -102,6 +102,32 @@ CREATE UNIQUE INDEX object__u_regoperator ON _object_reference.object(regoperato
 CREATE UNIQUE INDEX object__u_regprocedure ON _object_reference.object(regprocedure) WHERE regprocedure IS NOT NULL;
 CREATE UNIQUE INDEX object__u_regtype ON _object_reference.object(regtype) WHERE regtype IS NOT NULL;
 
+CREATE FUNCTION _object_reference.object__get_loose(
+  object_type   cat_tools.object_type
+  , object_names text[]
+  , object_args text[]
+) RETURNS _object_reference.object LANGUAGE sql STABLE AS $body$
+SELECT *
+  FROM _object_reference.object o
+  WHERE (o.object_type, o.object_names, o.object_args) = ($1, $2, $3)
+$body$;
+CREATE FUNCTION _object_reference.object__get_loose(
+  object_type   cat_tools.object_type
+  , object_oid oid
+  , secondary int DEFAULT 0
+) RETURNS _object_reference.object LANGUAGE sql STABLE AS $body$
+SELECT _object_reference.object__get_loose(
+    object_type -- NOTE: does not come from pg_identify_object_as_address!
+    , object_names
+    , object_args
+  )
+  FROM pg_catalog.pg_identify_object_as_address(
+    cat_tools.object__address_classid(object_type)
+    , object_oid
+    , secondary
+  )
+$body$;
+
 CREATE FUNCTION object_reference.object__getsert(
   object_type   cat_tools.object_type
   , object_oid oid
@@ -109,8 +135,8 @@ CREATE FUNCTION object_reference.object__getsert(
 ) RETURNS int LANGUAGE plpgsql AS $body$
 DECLARE
   c_object_type CONSTANT cat_tools.object_type = object_type;
-  c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
-  c_reg_type name := _object_reference.reg_type(c_catalog); -- Verifies regtype is supported, if there is one
+  c_address_classid CONSTANT regclass := cat_tools.object__address_classid(object_type);
+  c_reg_type name := _object_reference.reg_type(c_address_classid); -- Verifies regtype is supported, if there is one
   c_oid_field CONSTANT name := coalesce(c_reg_type, 'object_oid');
 
   c_insert CONSTANT text := format(
@@ -129,13 +155,13 @@ DECLARE
   i smallint;
   sql text;
 BEGIN
-  SELECT INTO r * FROM pg_catalog.pg_identify_object_as_address(c_catalog, object_oid, secondary);
+  SELECT INTO r * FROM pg_catalog.pg_identify_object_as_address(c_address_classid, object_oid, secondary);
 
   IF r IS NULL THEN
     RAISE 'unable to find object'
       USING DETAIL = format(
         'pg_identify_object_as_address(%s, %s, %s) returned NULL for object type %L'
-        , c_catalog
+        , c_address_classid
         , object_oid
         , secondary
         , c_object_type
@@ -145,11 +171,7 @@ BEGIN
 
   FOR i IN 1..10 LOOP
     -- TODO: crete a smart update function that only updates if data has changed, and always returns relevant data. Necessary to deal with object_* fields possibly changing.
-    SELECT INTO r_obj
-        *
-      FROM _object_reference.object o
-      WHERE (o.object_type, o.object_names, o.object_args) = (c_object_type, r.object_names, r.object_args)
-    ;
+    r_obj := _object_reference.object__get_loose(c_object_type, r.object_names, r.object_args);
     IF NOT r_obj IS NULL THEN
       RETURN r_obj.object_id;
     END IF;
