@@ -69,7 +69,7 @@ $body$;
 CREATE TABLE _object_reference.object(
   object_id       serial                  PRIMARY KEY
   , object_type   cat_tools.object_type   NOT NULL
-  , original_name text                    NOT NULL
+--  , original_name text                    NOT NULL
   , regclass      regclass
   , regconfig     regconfig
   , regdictionary regdictionary
@@ -82,12 +82,16 @@ CREATE TABLE _object_reference.object(
   , object_oid    oid
   , object_names text[]                  NOT NULL
   , object_args  text[]                  NOT NULL
+  , CONSTRAINT object__u_object_names__object_args UNIQUE( object_names, object_args )
+  , CONSTRAINT object__address_sanity
+    -- pg_get_object_address will throw an error if anything is wrong, so the IS NOT NULL is mostly pointless
+    CHECK( pg_catalog.pg_get_object_address(object_type::text, object_names, object_args) IS NOT NULL )
 );
 CREATE TRIGGER null_count
   AFTER INSERT OR UPDATE
   ON _object_reference.object
   FOR EACH ROW EXECUTE PROCEDURE not_null_count_trigger(
-    6 -- First 3 fields, identifier field, object_* fields (can't do actual 3 + 1 + 2 here)
+    5 -- First 2 fields, identifier field, object_* fields (can't do actual 3 + 1 + 2 here)
     , 'only one object reference field may be set'
   )
 ;
@@ -100,99 +104,60 @@ CREATE UNIQUE INDEX object__u_regtype ON _object_reference.object(regtype) WHERE
 
 CREATE FUNCTION object_reference.object__getsert(
   object_type   cat_tools.object_type
-  , object_name text
-  , secondary text DEFAULT NULL
-  , schema text DEFAULT NULL
+  , object_oid oid
+  , secondary int DEFAULT 0
 ) RETURNS int LANGUAGE plpgsql AS $body$
 DECLARE
   c_object_type CONSTANT cat_tools.object_type = object_type;
   c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
   c_reg_type name := _object_reference.reg_type(c_catalog); -- Verifies regtype is supported, if there is one
-  c_lookup_field CONSTANT name := coalesce(c_reg_type, 'object_oid');
-
-  c_select CONSTANT text := format(
-      'SELECT * FROM _object_reference.object WHERE %I = $1::%I'
-      , c_lookup_field
-      , coalesce(c_reg_type, 'oid')
-    )
-  ;
+  c_oid_field CONSTANT name := coalesce(c_reg_type, 'object_oid');
 
   c_insert CONSTANT text := format(
-      $$INSERT INTO _object_reference.object(object_type, original_name, %I, object_names, object_args)
-          SELECT $1, $2, $2::%I, object_names, object_args
-            FROM pg_identify_object_as_address($1, $3, $4)
+    -- USING c_object_type, object_oid, object_names, object_args
+      $$INSERT INTO _object_reference.object(object_type, %I, object_names, object_args)
+          SELECT $1, $2::%I, $3, $4
         RETURNING *$$
-      , c_lookup_field
+      , c_oid_field
       , coalesce(c_reg_type, 'oid')
     )
   ;
 
   r_obj _object_reference.object;
-  v_lookup_text text;
-  v_name_field text;
+  r record;
 
   i smallint;
   sql text;
 BEGIN
-  IF object_type <> 'function' AND secondary IS NOT NULL THEN
-    RAISE 'secondary may not be specified separately for % objects', object_type;
-  END IF;
+  SELECT INTO r * FROM pg_catalog.pg_identify_object_as_address(c_catalog, object_oid, secondary);
 
-  IF c_reg_type IS NOT NULL THEN
-    -- Ensure schema is NULL
-    IF schema IS NOT NULL THEN
-      RAISE 'schema may not be specified separately for % objects', object_type;
-    END IF;
-    /*
-     * Need to handle functions specially to support all the extra options they can have that regprocedure doesn't support.
-     */
-    IF object_type = 'function' THEN
-      v_lookup_text := cat_tools.regprocedure(object_name, secondary);
-    ELSE
-      v_lookup_text := object_name;
-    END IF;
-  ELSE
-    -- Need to do a manual lookup of the OID based on what catalog it is
-
-    /*
-     * Default case
-     *
-     * Get first 3 letters of catalog name after the 'pg_', since that's
-     * usually the field name. We also need to handle the possibility of
-     * 'pg_catalog.' being part of c_catalog.
-     */
-    v_name_field := substring(regexp_replace(c_catalog::text, '(pg_catalog\.)?pg_', ''), 1, 3);
-
-    v_name_field := CASE v_name_field
-        WHEN 'tri' THEN 'tg' -- pg_trigger
-        ELSE v_name_field
-      END || 'name'
+  IF r IS NULL THEN
+    RAISE 'unable to find object'
+      USING DETAIL = format(
+        'pg_identify_object_as_address(%s, %s, %s) returned NULL for object type %L'
+        , c_catalog
+        , object_oid
+        , secondary
+        , c_object_type
+      )
     ;
-    sql := format(
-      'SELECT oid FROM %s WHERE %I = %L'
-      , c_catalog -- No need to quote
-      , v_name_field
-      , object_name
-    );
-    EXECUTE sql INTO STRICT v_lookup_text;
   END IF;
 
   FOR i IN 1..10 LOOP
     -- TODO: crete a smart update function that only updates if data has changed, and always returns relevant data. Necessary to deal with object_* fields possibly changing.
-    EXECUTE c_select
-      INTO r_obj
-      USING v_lookup_text
+    SELECT INTO r_obj
+        *
+      FROM _object_reference.object o
+      WHERE (o.object_type, o.object_names, o.object_args) = (c_object_type, r.object_names, r.object_args)
     ;
-    RAISE DEBUG 'executing "%" using "%" returned "%", FOUND=%, NOT r_obj IS NULL = %', c_select, v_lookup_text, r_obj, FOUND, NOT r_obj IS NULL;
     IF NOT r_obj IS NULL THEN
-      ASSERT(r_obj.object_type = c_object_type);
       RETURN r_obj.object_id;
     END IF;
 
     BEGIN
       EXECUTE c_insert
         INTO r_obj
-        USING object_type, v_lookup_text
+        USING c_object_type, object_oid, r.object_names, r.object_args
       ;
       RETURN r_obj.object_id;
     EXCEPTION WHEN unique_violation THEN
