@@ -80,12 +80,15 @@ CREATE TABLE _object_reference.object(
 --  , regrole       regrole -- SED: REQUIRES 9.5!
   , regtype       regtype
   , object_oid    oid
+  , object_names text[]                  NOT NULL
+  , object_args  text[]                  NOT NULL
 );
 CREATE TRIGGER null_count
   AFTER INSERT OR UPDATE
   ON _object_reference.object
   FOR EACH ROW EXECUTE PROCEDURE not_null_count_trigger(
-    4, 'only one object reference field may be set'
+    6 -- First 3 fields, identifier field, object_* fields (can't do actual 3 + 1 + 2 here)
+    , 'only one object reference field may be set'
   )
 ;
 CREATE UNIQUE INDEX object__u_regclass ON _object_reference.object(regclass) WHERE regclass IS NOT NULL;
@@ -102,6 +105,7 @@ CREATE FUNCTION object_reference.object__getsert(
   , schema text DEFAULT NULL
 ) RETURNS int LANGUAGE plpgsql AS $body$
 DECLARE
+  c_object_type CONSTANT cat_tools.object_type = object_type;
   c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
   c_reg_type name := _object_reference.reg_type(c_catalog); -- Verifies regtype is supported, if there is one
   c_lookup_field CONSTANT name := coalesce(c_reg_type, 'object_oid');
@@ -114,7 +118,10 @@ DECLARE
   ;
 
   c_insert CONSTANT text := format(
-      'INSERT INTO _object_reference.object(object_type, original_name, %I) VALUES($1, $2, $2::%I) RETURNING *'
+      $$INSERT INTO _object_reference.object(object_type, original_name, %I, object_names, object_args)
+          SELECT $1, $2, $2::%I, object_names, object_args
+            FROM pg_identify_object_as_address($1, $3, $4)
+        RETURNING *$$
       , c_lookup_field
       , coalesce(c_reg_type, 'oid')
     )
@@ -171,12 +178,14 @@ BEGIN
   END IF;
 
   FOR i IN 1..10 LOOP
+    -- TODO: crete a smart update function that only updates if data has changed, and always returns relevant data. Necessary to deal with object_* fields possibly changing.
     EXECUTE c_select
       INTO r_obj
       USING v_lookup_text
     ;
     RAISE DEBUG 'executing "%" using "%" returned "%", FOUND=%, NOT r_obj IS NULL = %', c_select, v_lookup_text, r_obj, FOUND, NOT r_obj IS NULL;
     IF NOT r_obj IS NULL THEN
+      ASSERT(r_obj.object_type = c_object_type);
       RETURN r_obj.object_id;
     END IF;
 

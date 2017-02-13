@@ -5,7 +5,7 @@
 <!--[if IE]><meta http-equiv="X-UA-Compatible" content="IE=edge"><![endif]-->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 1.5.4">
-<title>Untitled</title>
+<title>pg_dump support</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /* Asciidoctor default stylesheet | MIT License | http://asciidoctor.org */
@@ -421,11 +421,24 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="header">
 </div>
 <div id="content">
-
+<div class="sect2">
+<h3 id="_pg_dump_support">pg_dump support</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>An EVENT TRIGGER captures any DDL changes that affect tracked objects, and if necessary updates the object address information.</p>
+</li>
+<li>
+<p>Any records read from the tracked_objects view have their addresses checked, and corrected if possible.
+-</p>
+</li>
+</ul>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2016-12-06 19:37:19 CST
+Last updated 2016-12-28 19:16:34 CST
 </div>
 </div>
 </body>

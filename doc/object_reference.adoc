@@ -1,0 +1,5 @@
+=== pg_dump support
+
+- An EVENT TRIGGER captures any DDL changes that affect tracked objects, and if necessary updates the object address information.
+- Any records read from the tracked_objects view have their addresses checked, and corrected if possible.
+- 
