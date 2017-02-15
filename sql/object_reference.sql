@@ -141,16 +141,16 @@ $body$;
 
 CREATE FUNCTION _object_reference.object__getsert(
   object_type _object_reference.object.object_type%TYPE
-  , classid _object_reference.object.classid%TYPE
   , objid _object_reference.object.objid%TYPE
   , objsubid _object_reference.object.objsubid%TYPE
 ) RETURNS _object_reference.object LANGUAGE plpgsql AS $body$
 DECLARE
   c_reg_type name := _object_reference.reg_type(object_type); -- Verifies regtype is supported, if there is one
+  c_classid CONSTANT regclass := cat_tools.object__address_classid(object_type);
   c_oid_field CONSTANT name := coalesce(c_reg_type, 'object_oid');
 
   c_insert CONSTANT text := format(
-    -- USING object_type, classid, objid, objsubid, object_names, object_args
+    -- USING object_type, c_classid, objid, objsubid, object_names, object_args
       $$INSERT INTO _object_reference.object(object_type, classid, objid, objsubid, %I, object_names, object_args)
           SELECT $1, $2, $3, $4, $3::%I, $5, $6
         RETURNING *$$
@@ -165,13 +165,13 @@ DECLARE
   i smallint;
   sql text;
 BEGIN
-  SELECT INTO r_address * FROM pg_catalog.pg_identify_object_as_address(classid, objid, objsubid);
+  SELECT INTO r_address * FROM pg_catalog.pg_identify_object_as_address(c_classid, objid, objsubid);
 
   IF r_address IS NULL THEN
     RAISE 'unable to find object'
       USING DETAIL = format(
         'pg_identify_object_as_address(%s, %s, %s) returned NULL'
-        , classid
+        , c_classid
         , objid
         , objsubid
       )
@@ -180,7 +180,7 @@ BEGIN
 
   FOR i IN 1..10 LOOP
     -- TODO: create a smart update function that only updates if data has changed, and always returns relevant data. Necessary to deal with object_* fields possibly changing.
-    r_object := _object_reference.object__get_loose(classid, objid, objsubid);
+    r_object := _object_reference.object__get_loose(c_classid, objid, objsubid);
     IF NOT r_object IS NULL THEN
       RETURN r_object;
     END IF;
@@ -188,7 +188,7 @@ BEGIN
     BEGIN
       EXECUTE c_insert
         INTO r_object
-        USING object_type, classid, objid, objsubid, r_address.object_names, r_address.object_args
+        USING object_type, c_classid, objid, objsubid, r_address.object_names, r_address.object_args
       ;
       RETURN r_object;
     EXCEPTION WHEN unique_violation THEN
@@ -197,6 +197,17 @@ BEGIN
   END LOOP;
 
   RAISE 'fell out of loop!' USING HINT = 'This should never happen.';
+END
+$body$;
+
+CREATE FUNCTION object_reference.object__getsert(
+  object_type   cat_tools.object_type
+  , object_name text
+  , secondary text DEFAULT NULL
+  , schema text DEFAULT NULL
+) RETURNS int LANGUAGE plpgsql AS $body$
+DECLARE
+BEGIN
 END
 $body$;
 

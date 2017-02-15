@@ -24,8 +24,8 @@ SELECT plan(
  * column_test
  */
 SELECT lives_ok(
-  $$CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference.object__getsert('table column', 1259, 'table_under_test'::regclass, 1)$$
-  , $$CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference.object__getsert('table column', 1259, 'table_under_test'::regclass, 1)$$
+  $$CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 1)$$
+  , $$CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 1)$$
 );
 SELECT is(
   (SELECT count(*) FROM column_test)
@@ -46,8 +46,8 @@ SELECT is(
  * table_test
  */
 SELECT lives_ok(
-  $$CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference.object__getsert('table', 1259, 'table_under_test'::regclass, 0)$$
-  , $$CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference.object__getsert('table', 1259, 'table_under_test'::regclass, 0)$$
+  $$CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference.object__getsert('table', 'table_under_test'::regclass, 0)$$
+  , $$CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference.object__getsert('table', 'table_under_test'::regclass, 0)$$
 );
 SELECT is(
   (SELECT count(*) FROM table_test)
