@@ -1,5 +1,30 @@
 \set ECHO none
-1..2
-ok 1 - CREATE TEMP TABLE test_object AS SELECT object_reference.object__getsert('table column', 'test_table'::regclass, 1) AS object_id;
+1..27
+ok 1 - CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 1)
 ok 2 - Exactly 1 test object record
+ok 3 - Create test_column_view
+ok 4 - Exactly 1 test view record
+ok 5 - CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference.object__getsert('table', 'table_under_test'::regclass, 0)
+ok 6 - Exactly 1 test object record
+ok 7 - Create test_table_view
+ok 8 - Exactly 1 test view record
+ok 9 - Rename column
+ok 10 - Update column_test
+ok 11 - table_test: verify column rename
+ok 12 - column_test: verify column rename
+ok 13 - Rename schema
+ok 14 - Update table_test
+ok 15 - Update column_test
+ok 16 - table_test: verify table rename
+ok 17 - column_test: verify table rename
+ok 18 - Rename table
+ok 19 - Update table_test
+ok 20 - Update column_test
+ok 21 - table_test: verify table rename
+ok 22 - column_test: verify table rename
+ok 23 - Drop column
+ok 24 - Verify column record is deleted
+ok 25 - Verify table record is unchanged
+ok 26 - Drop table
+ok 27 - Verify table record is deleted
 # TRANSACTION INTENTIONALLY LEFT OPEN!

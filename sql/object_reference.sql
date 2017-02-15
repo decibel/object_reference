@@ -40,32 +40,6 @@ $body$;
 GRANT USAGE ON SCHEMA object_reference TO object_reference__usage;
 CREATE SCHEMA _object_reference;
 
-CREATE FUNCTION _object_reference.reg_type(
-  object_type cat_tools.object_type
-) RETURNS name LANGUAGE plpgsql IMMUTABLE
-SET search_path FROM CURRENT -- Ensure pg_catalog is in the search_path
-AS $body$
-DECLARE
-  v_reg_type regtype; -- Set if there is a reg* object identifier type available
-BEGIN
-  v_reg_type := cat_tools.object__reg_type(object_type);
-  IF v_reg_type NOT IN (
-      NULL -- This is OK
-      , 'regclass'
-      , 'regconfig'
-      , 'regdictionary'
-      , 'regoperator'
-      , 'regprocedure'
-      , 'regtype'
-    )  
-    THEN
-    RAISE 'object type "%" is not yet supported', object_type;
-  END IF;
-
-  RETURN v_reg_type;
-END
-$body$;
-  
 CREATE TABLE _object_reference.object(
   object_id       serial                  PRIMARY KEY
   , object_type   cat_tools.object_type   NOT NULL
@@ -145,7 +119,7 @@ CREATE FUNCTION _object_reference.object__getsert(
   , objsubid _object_reference.object.objsubid%TYPE
 ) RETURNS _object_reference.object LANGUAGE plpgsql AS $body$
 DECLARE
-  c_reg_type name := _object_reference.reg_type(object_type); -- Verifies regtype is supported, if there is one
+  c_reg_type name := cat_tools.object__reg_type(object_type); -- Verifies regtype is supported, if there is one
   c_classid CONSTANT regclass := cat_tools.object__address_classid(object_type);
   c_oid_field CONSTANT name := coalesce(c_reg_type, 'object_oid');
 
@@ -165,6 +139,8 @@ DECLARE
   i smallint;
   sql text;
 BEGIN
+  -- TODO: throw exception for unsupported object types (shared objects such as roles and databases)
+
   SELECT INTO r_address * FROM pg_catalog.pg_identify_object_as_address(c_classid, objid, objsubid);
 
   IF r_address IS NULL THEN
@@ -204,10 +180,76 @@ CREATE FUNCTION object_reference.object__getsert(
   object_type   cat_tools.object_type
   , object_name text
   , secondary text DEFAULT NULL
-  , schema text DEFAULT NULL
 ) RETURNS int LANGUAGE plpgsql AS $body$
 DECLARE
+  c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
+
+  v_objid oid;
+  v_subid int := 0;
 BEGIN
+  -- Some catalogs need special handling
+  CASE c_catalog
+  -- Functions
+  WHEN 'pg_catalog.pg_proc'::regclass THEN
+    /*
+     * Need to handle functions specially to support all the extra options they
+     * can have that regprocedure doesn't support.
+     */
+    -- TODO: allow this to parse object_name directly
+    v_objid := cat_tools.regprocedure(object_name, secondary);
+    secondary = NULL;
+
+  -- Columns
+  WHEN 'pg_catalog.pg_attribute'::regclass THEN
+    -- Will throw error if column isn't valid
+    v_objid := object_name::regclass;
+    v_subid := cat_tools.pg_attribute__get(v_objid, secondary);
+    secondary = NULL;
+
+  ELSE
+    DECLARE
+      c_reg_type name := cat_tools.object__reg_type(c_catalog);
+
+      v_name_field text;
+      sql text;
+    BEGIN
+      IF c_reg_type IS NULL THEN
+        /*
+         * Need to do a manual lookup of the OID based on what catalog it is
+         *
+         * Get first 3 letters of catalog name after the 'pg_', since that's
+         * usually the field name. We also need to handle the possibility of
+         * 'pg_catalog.' being part of c_catalog.
+         */
+        v_name_field := substring(regexp_replace(c_catalog::text, '(pg_catalog\.)?pg_', ''), 1, 3);
+
+        v_name_field := CASE v_name_field
+            WHEN 'tri' THEN 'tg' -- pg_trigger
+            ELSE v_name_field
+          END || 'name'
+        ;
+        sql := format(
+          'SELECT oid FROM %s WHERE %I = %L'
+          , c_catalog -- No need to quote
+          , v_name_field
+          , object_name
+        );
+      ELSE
+        sql := format(
+          'SELECT %L::%s'
+          , object_name
+          , c_reg_type -- No need to quote
+        );
+      END IF;
+      EXECUTE sql INTO STRICT v_objid;
+    END;
+  END CASE;
+
+  IF secondary IS NOT NULL THEN
+    RAISE 'secondary may not be specified for % objects', object_type;
+  END IF;
+
+  RETURN (_object_reference.object__getsert( object_type, v_objid, v_subid )).object_id;
 END
 $body$;
 

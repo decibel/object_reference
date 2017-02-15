@@ -27,16 +27,10 @@ SELECT is(
 );
 
 SELECT throws_ok(
-  $$SELECT object_reference.object__getsert('table', 'test_table', schema:='test')$$
-  , NULL
-  , 'schema may not be specified separately for table objects'
-  , 'schema may not be specified separately for table objects'
-);
-SELECT throws_ok(
   $$SELECT object_reference.object__getsert('table', 'test_table', secondary:='test')$$
   , NULL
-  , 'secondary may not be specified separately for table objects'
-  , 'secondary may not be specified separately for table objects'
+  , 'secondary may not be specified for table objects'
+  , 'secondary may not be specified for table objects'
 );
 
 /*
