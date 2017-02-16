@@ -2,13 +2,15 @@
 
 \i test/load.sql
 
-CREATE SCHEMA object_identity_temp_test_schema;
+CREATE SCHEMA object_identity_temp_test_schema; -- THIS NEEDS TO FAIL IF THE SCHEMA EXISTS!
 SET search_path=object_identity_temp_test_schema,tap,public;
 
 CREATE TABLE table_under_test(column_test int, filler int);
+CREATE TABLE test2(col int);
 
 SELECT plan(
   0
+  +3 -- objects setup
   +4 * 2 -- column_test
   +4 -- table_test
 
@@ -18,7 +20,29 @@ SELECT plan(
 
   +3 -- column drop
   +3 -- table drop
+  +3 -- schema drop
 );
+
+SELECT lives_ok(
+  $$CREATE TEMP TABLE objects AS
+      SELECT * FROM _object_reference.object__getsert('schema', 'object_identity_temp_test_schema'::regnamespace, 0)
+      UNION ALL
+      SELECT * FROM _object_reference.object__getsert('table', 'test2'::regclass, 0)
+      UNION ALL
+      SELECT * FROM _object_reference.object__getsert('table column', 'test2'::regclass, 1)
+  $$
+  , 'Register schema-drop test objects'
+);
+SELECT lives_ok(
+  $$CREATE TEMP VIEW objects_view AS SELECT o.* FROM _object_reference.object o JOIN objects t USING(object_id)$$
+  , 'Create objects_view'
+);
+SELECT is(
+  (SELECT count(*) FROM objects_view)
+  , 3::bigint
+  , 'Exactly 3 test view records'
+);
+
 
 /*
  * column_test
@@ -93,7 +117,13 @@ RETURNS SETOF text LANGUAGE sql AS $body$
 SELECT results_eq(
   $$SELECT * FROM column_test_view$$
   , $$SELECT * FROM column_test$$
-  , $1
+  , 'test: ' || $1
+)
+UNION ALL
+SELECT results_eq(
+  $$SELECT * FROM column_filler_view$$
+  , $$SELECT * FROM column_filler$$
+  , 'filler: ' || $1
 )
 $body$;
 CREATE FUNCTION pg_temp.check_table(text)
@@ -132,11 +162,21 @@ SELECT lives_ok(
 );
 SET search_path=test_schema2,tap,public;
 SELECT lives_ok(
+  $$
+    UPDATE objects SET object_names[0] = 'test_schema2' WHERE object_names[0] = 'object_identity_temp_test_schema';
+    UPDATE objects SET object_names[1] = 'test_schema2' WHERE object_names[1] = 'object_identity_temp_test_schema';
+  $$
+  , 'Update objects table'
+);
+SELECT lives_ok(
   $$UPDATE table_test SET object_names[1] = 'test_schema2'$$
   , 'Update table_test'
 );
 SELECT lives_ok(
-  $$UPDATE column_test SET object_names[1] = 'test_schema2'$$
+  $$
+    UPDATE column_test SET object_names[1] = 'test_schema2';
+    UPDATE column_filler SET object_names[1] = 'test_schema2';
+  $$
   , 'Update column_test'
 );
 SELECT pg_temp.check_both('verify table rename');
@@ -151,7 +191,10 @@ SELECT lives_ok(
   , 'Update table_test'
 );
 SELECT lives_ok(
-  $$UPDATE column_test SET object_names[2] = 'test_table2'$$
+  $$
+    UPDATE column_test SET object_names[2] = 'test_table2';
+    UPDATE column_filler SET object_names[2] = 'test_table2';
+  $$
   , 'Update column_test'
 );
 SELECT pg_temp.check_both('verify table rename');
@@ -179,6 +222,22 @@ SELECT is_empty(
 SELECT is_empty(
   $$SELECT * FROM column_filler_view$$
   , 'Verify filler column record is deleted'
+);
+
+-- Drop schema
+SELECT results_eq(
+  $$SELECT * FROM objects_view$$
+  , $$SELECT * FROM objects$$
+  , 'Verify objects still registered correctly'
+);
+SELECT lives_ok(
+  $$DROP SCHEMA test_schema2 CASCADE$$
+  , 'Drop schema'
+);
+SELECT is(
+  (SELECT count(*) FROM objects_view)
+  , 0::bigint
+  , 'objects_view is empty'
 );
 
 \i test/pgxntool/finish.sql

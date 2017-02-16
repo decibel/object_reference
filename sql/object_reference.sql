@@ -52,8 +52,7 @@ CREATE TABLE _object_reference.object(
   regclass::oid -- Need to cast first item to generic OID
   , regconfig
   , regdictionary
--- TODO: support this
---  , regnamespace -- SED: REQUIRES 9.5!
+  , regnamespace -- SED: REQUIRES 9.5!
   , regoperator
   , regprocedure
   , regtype
@@ -69,9 +68,8 @@ CREATE TABLE _object_reference.object(
     CONSTRAINT regconfig_classid CHECK( regconfig IS NULL OR classid = cat_tools.object__reg_type_catalog('regconfig') )
   , regdictionary regdictionary
     CONSTRAINT regdictionary_classid CHECK( regdictionary IS NULL OR classid = cat_tools.object__reg_type_catalog('regdictionary') )
--- TODO: support this
---  , regnamespace  regnamespace -- SED: REQUIRES 9.5!
---    CONSTRAINT regnamespace_classid CHECK( regnamespace IS NULL OR classid = cat_tools.object__reg_type_catalog('regnamespace') ) -- SED: REQUIRES 9.5!
+  , regnamespace  regnamespace -- SED: REQUIRES 9.5!
+    CONSTRAINT regnamespace_classid CHECK( regnamespace IS NULL OR classid = cat_tools.object__reg_type_catalog('regnamespace') ) -- SED: REQUIRES 9.5!
   , regoperator   regoperator
     CONSTRAINT regoperator_classid CHECK( regoperator IS NULL OR classid = cat_tools.object__reg_type_catalog('regoperator') )
   , regprocedure  regprocedure
