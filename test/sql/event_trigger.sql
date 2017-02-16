@@ -14,11 +14,11 @@ SELECT plan(
   +4 * 2 -- column_test
   +4 -- table_test
 
-  +4 -- column rename
-  +5 -- schema rename
-  +5 -- table rename
+  +2 + 3 -- column rename
+  +4 + 3 -- schema rename
+  +3 + 3 -- table rename
 
-  +3 -- column drop
+  +2 + 1 -- column drop
   +3 -- table drop
   +3 -- schema drop
 );
