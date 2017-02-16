@@ -9,7 +9,7 @@ CREATE TABLE table_under_test(column_test int, filler int);
 
 SELECT plan(
   0
-  +4 -- column_test
+  +4 * 2 -- column_test
   +4 -- table_test
 
   +4 -- column rename
@@ -17,7 +17,7 @@ SELECT plan(
   +5 -- table rename
 
   +3 -- column drop
-  +2 -- table drop
+  +3 -- table drop
 );
 
 /*
@@ -33,11 +33,32 @@ SELECT is(
   , 'Exactly 1 test object record'
 );
 SELECT lives_ok(
-  $$CREATE TEMP VIEW test_column_view AS SELECT o.* FROM _object_reference.object o JOIN column_test t USING(object_id)$$
-  , 'Create test_column_view'
+  $$CREATE TEMP VIEW column_test_view AS SELECT o.* FROM _object_reference.object o JOIN column_test t USING(object_id)$$
+  , 'Create column_test_view'
 );
 SELECT is(
-  (SELECT count(*) FROM test_column_view)
+  (SELECT count(*) FROM column_test_view)
+  , 1::bigint
+  , 'Exactly 1 test view record'
+);
+
+-- s/column_test/column_filler/g
+-- Change 1 to 2 in getsert
+SELECT lives_ok(
+  $$CREATE TEMP TABLE column_filler AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 2)$$
+  , $$CREATE TEMP TABLE column_filler AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 2)$$
+);
+SELECT is(
+  (SELECT count(*) FROM column_filler)
+  , 1::bigint
+  , 'Exactly 1 test object record'
+);
+SELECT lives_ok(
+  $$CREATE TEMP VIEW column_filler_view AS SELECT o.* FROM _object_reference.object o JOIN column_filler t USING(object_id)$$
+  , 'Create column_filler_view'
+);
+SELECT is(
+  (SELECT count(*) FROM column_filler_view)
   , 1::bigint
   , 'Exactly 1 test view record'
 );
@@ -55,11 +76,11 @@ SELECT is(
   , 'Exactly 1 test object record'
 );
 SELECT lives_ok(
-  $$CREATE TEMP VIEW test_table_view AS SELECT o.* FROM _object_reference.object o JOIN table_test t USING(object_id)$$
-  , 'Create test_table_view'
+  $$CREATE TEMP VIEW table_test_view AS SELECT o.* FROM _object_reference.object o JOIN table_test t USING(object_id)$$
+  , 'Create table_test_view'
 );
 SELECT is(
-  (SELECT count(*) FROM test_table_view)
+  (SELECT count(*) FROM table_test_view)
   , 1::bigint
   , 'Exactly 1 test view record'
 );
@@ -70,7 +91,7 @@ SELECT is(
 CREATE FUNCTION pg_temp.check_column(text)
 RETURNS SETOF text LANGUAGE sql AS $body$
 SELECT results_eq(
-  $$SELECT * FROM test_column_view$$
+  $$SELECT * FROM column_test_view$$
   , $$SELECT * FROM column_test$$
   , $1
 )
@@ -78,7 +99,7 @@ $body$;
 CREATE FUNCTION pg_temp.check_table(text)
 RETURNS SETOF text LANGUAGE sql AS $body$
 SELECT results_eq(
-  $$SELECT * FROM test_table_view$$
+  $$SELECT * FROM table_test_view$$
   , $$SELECT * FROM table_test$$
   , $1
 )
@@ -141,7 +162,7 @@ SELECT lives_ok(
   , 'Drop column'
 );
 SELECT is_empty(
-  $$SELECT * FROM test_column_view$$
+  $$SELECT * FROM column_test_view$$
   , 'Verify column record is deleted'
 );
 SELECT pg_temp.check_table('Verify table record is unchanged');
@@ -152,8 +173,12 @@ SELECT lives_ok(
   , 'Drop table'
 );
 SELECT is_empty(
-  $$SELECT * FROM test_table_view$$
+  $$SELECT * FROM table_test_view$$
   , 'Verify table record is deleted'
+);
+SELECT is_empty(
+  $$SELECT * FROM column_filler_view$$
+  , 'Verify filler column record is deleted'
 );
 
 \i test/pgxntool/finish.sql

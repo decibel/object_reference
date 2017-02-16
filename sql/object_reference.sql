@@ -257,7 +257,7 @@ CREATE FUNCTION _object_reference._etg_fix_identity(
 ) RETURNS event_trigger LANGUAGE plpgsql AS $body$
 DECLARE
   r_ddl record;
-  r_address record;
+  r record;
 BEGIN
   /*
    * It's tempting to use pg_event_trigger_ddl_commands() to find exactly what
@@ -277,30 +277,42 @@ BEGIN
    * safe and attempt the update to object_type. If it actually does change the
    * constraint on the table should catch it.
    */
-  UPDATE _object_reference.object
-    SET object_type  = (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid)).type::cat_tools.object_type
-      , object_names = (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid)).object_names
-      , object_args  = (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid)).object_args
-    WHERE (object_type::text, object_names, object_args) IS DISTINCT FROM
-      (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid))
-  ;
+  FOR r IN
+    UPDATE _object_reference.object
+      SET object_type  = (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid)).type::cat_tools.object_type
+        , object_names = (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid)).object_names
+        , object_args  = (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid)).object_args
+      WHERE (object_type::text, object_names, object_args) IS DISTINCT FROM
+        (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid))
+      RETURNING *
+  LOOP
+    RAISE DEBUG 'modified_objects(): %', r;
+  END LOOP;
 END
 $body$;
 CREATE FUNCTION _object_reference._etg_drop(
 ) RETURNS event_trigger LANGUAGE plpgsql AS $body$
 DECLARE
   r_object _object_reference.object;
-  r_address record;
+  r record;
 BEGIN
-  FOR r_address IN SELECT classid, objid, objsubid, object_type, schema_name, object_identity FROM pg_catalog.pg_event_trigger_dropped_objects() LOOP
-    RAISE DEBUG 'dropped_objects(): %', r_address;
+  FOR r IN SELECT classid, objid, objsubid, object_type, schema_name, object_identity FROM pg_catalog.pg_event_trigger_dropped_objects() LOOP
+    RAISE DEBUG 'dropped_objects(): %', r;
   END LOOP;
   -- Multiple objects might have been affected
   -- Could potentially be done with a writable CTE
   FOR r_object IN
     SELECT object.*
       FROM pg_catalog.pg_event_trigger_dropped_objects() d
-        JOIN _object_reference.object USING( classid, objid, objsubid )
+        JOIN _object_reference.object USING( classid, objid ) -- Intentionally ignore objsubid
+      WHERE
+        /*
+         * If an object that contains subobjects is being removed, we need to
+         * also remove all subobjects. Otherwise, only remove the appropriate
+         * suboject.
+         */
+        d.objsubid = 0 -- Case 1 above (or object doesn't have subobjects, which is fine)
+        OR d.objsubid = object.objsubid
   LOOP
     RAISE DEBUG 'deleting object %', r_object;
     DELETE FROM _object_reference.object WHERE object_id = r_object.object_id;
