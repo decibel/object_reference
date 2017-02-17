@@ -36,6 +36,86 @@ BEGIN
 END
 $body$;
 
+
+CREATE FUNCTION __object_reference.create_function(
+  function_name text
+  , args text
+  , options text
+  , body text
+  , comment text
+  , grants text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql AS $body$
+DECLARE
+  c_clean_args text := cat_tools.function__arg_types_text(args);
+
+  create_template CONSTANT text := $template$
+CREATE OR REPLACE FUNCTION %s(
+%s
+) RETURNS %s AS
+%L
+$template$
+  ;
+
+  revoke_template CONSTANT text := $template$
+REVOKE ALL ON FUNCTION %s(
+%s
+) FROM public;
+$template$
+  ;
+
+  grant_template CONSTANT text := $template$
+GRANT EXECUTE ON FUNCTION %s(
+%s
+) TO %s;
+$template$
+  ;
+
+  comment_template CONSTANT text := $template$
+COMMENT ON FUNCTION %s(
+%s
+) IS %L;
+$template$
+  ;
+
+BEGIN
+  PERFORM __object_reference.exec( format(
+      create_template
+      , function_name
+      , args
+      , options -- TODO: Force search_path if options ~* 'definer'
+      , body
+    ) )
+  ;
+  PERFORM __object_reference.exec( format(
+      revoke_template
+      , function_name
+      , c_clean_args
+    ) )
+  ;
+
+  IF grants IS NOT NULL THEN
+    PERFORM __object_reference.exec( format(
+        grant_template
+        , function_name
+        , c_clean_args
+        , grants
+      ) )
+    ;
+  END IF;
+
+  IF comment IS NOT NULL THEN
+    PERFORM __object_reference.exec( format(
+        comment_template
+        , function_name
+        , c_clean_args
+        , comment
+      ) )
+    ;
+  END IF;
+END
+$body$;
+
+
 -- Schema already created via CREATE EXTENSION
 GRANT USAGE ON SCHEMA object_reference TO object_reference__usage;
 CREATE SCHEMA _object_reference;
@@ -119,9 +199,13 @@ CREATE TABLE _object_reference.object_group__object(
 );
 
 -- __get
-CREATE FUNCTION object_reference.object_group__get(
+SELECT __object_reference.create_function(
+  'object_reference.object_group__get'
+  , $args$
   object_group_name _object_reference.object_group.object_group_name%TYPE
-) RETURNS _object_reference.object_group LANGUAGE plpgsql STABLE AS $body$
+$args$
+  , '_object_reference.object_group LANGUAGE plpgsql STABLE'
+  , $body$
 DECLARE
   r _object_reference.object_group;
 BEGIN
@@ -136,10 +220,17 @@ EXCEPTION WHEN no_data_found THEN
     USING ERRCODE = 'no_data_found'
   ;
 END
-$body$;
-CREATE FUNCTION object_reference.object_group__get(
+$body$
+  , 'Get details about the specified object group'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.object_group__get'
+  , $args$
   object_group_id _object_reference.object_group.object_group_id%TYPE
-) RETURNS _object_reference.object_group LANGUAGE plpgsql STABLE AS $body$
+$args$
+  , '_object_reference.object_group LANGUAGE plpgsql STABLE'
+  , $body$
 DECLARE
   r _object_reference.object_group;
 BEGIN
@@ -154,47 +245,82 @@ EXCEPTION WHEN no_data_found THEN
     USING ERRCODE = 'no_data_found'
   ;
 END
-$body$;
+$body$
+  , 'Get details about the specified object group'
+  , 'object_reference__usage'
+);
 
 -- __create
-CREATE FUNCTION object_reference.object_group__create(
+SELECT __object_reference.create_function(
+  'object_reference.object_group__create'
+  , $args$
   object_group_name _object_reference.object_group.object_group_name%TYPE
-) RETURNS int LANGUAGE sql AS $body$
+$args$
+  , 'int LANGUAGE sql'
+  , $body$
 INSERT INTO _object_reference.object_group(object_group_name) VALUES(object_group_name)
   RETURNING object_group_id
-$body$;
+$body$
+  , 'Create a new object group.'
+  , 'object_reference__usage'
+);
 
 -- __remove
-CREATE FUNCTION object_reference.object_group__remove(
+SELECT __object_reference.create_function(
+  'object_reference.object_group__remove'
+  , $args$
   object_group_id _object_reference.object_group.object_group_id%TYPE
-) RETURNS void LANGUAGE sql AS $body$
+$args$
+  , 'void LANGUAGE sql'
+  , $body$
 DELETE FROM _object_reference.object_group
   -- This is to ensure group exists
   WHERE object_group_id = (object_reference.object_group__get($1)).object_group_id
-$body$;
-CREATE FUNCTION object_reference.object_group__remove(
+$body$
+  , 'Remove a object group.'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.object_group__remove'
+  , $args$
   object_group_name _object_reference.object_group.object_group_name%TYPE
-) RETURNS void LANGUAGE sql AS $body$
+$args$
+  , 'void LANGUAGE sql'
+  , $body$
 DELETE FROM _object_reference.object_group
   -- This is to ensure group exists
   WHERE object_group_name = (object_reference.object_group__get($1)).object_group_name
-$body$;
+$body$
+  , 'Remove a object group.'
+  , 'object_reference__usage'
+);
 
 -- __object__add
-CREATE FUNCTION object_reference.object_group__object__add(
+SELECT __object_reference.create_function(
+  'object_reference.object_group__object__add'
+  , $args$
   object_group_id _object_reference.object_group__object.object_group_id%TYPE
   , object_id _object_reference.object_group__object.object_id%TYPE
-) RETURNS void LANGUAGE sql AS $body$
+$args$
+  , 'void LANGUAGE sql'
+  , $body$
   INSERT INTO _object_reference.object_group__object AS ogo(object_group_id, object_id)
     VALUES($1, $2)
     ON CONFLICT (object_group_id, object_id) DO NOTHING
-$body$;
+$body$
+  , 'Add a object_id to a object group.'
+  , 'object_reference__usage'
+);
 
 -- __object__remove
-CREATE FUNCTION object_reference.object_group__object__remove(
+SELECT __object_reference.create_function(
+  'object_reference.object_group__object__remove'
+  , $args$
   object_group_id _object_reference.object_group__object.object_group_id%TYPE
   , object_id _object_reference.object_group__object.object_id%TYPE
-) RETURNS void LANGUAGE plpgsql AS $body$
+$args$
+  , 'void LANGUAGE plpgsql'
+  , $body$
 BEGIN
   DELETE FROM _object_reference.object_group__object AS ogo
     WHERE
@@ -215,18 +341,25 @@ BEGIN
     ;
   END IF;
 END
-$body$;
+$body$
+  , 'Remove a object_id from a object group.'
+  , 'object_reference__usage'
+);
 
 
 /*
  * OBJECT GETSERT
  */
-CREATE FUNCTION _object_reference.object__getsert(
+SELECT __object_reference.create_function(
+  '_object_reference.object__getsert'
+  , $args$
   object_type _object_reference.object.object_type%TYPE
   , objid _object_reference.object.objid%TYPE
   , objsubid _object_reference.object.objsubid%TYPE
   , object_group_id int DEFAULT NULL
-) RETURNS _object_reference.object LANGUAGE plpgsql AS $body$
+$args$
+  , '_object_reference.object LANGUAGE plpgsql'
+  , $body$
 DECLARE
   c_reg_type name := cat_tools.object__reg_type(object_type); -- Verifies regtype is supported, if there is one
   c_classid CONSTANT regclass := cat_tools.object__address_classid(object_type);
@@ -294,14 +427,20 @@ BEGIN
 
   RAISE 'fell out of loop!' USING HINT = 'This should never happen.';
 END
-$body$;
+$body$
+  , 'Return details of a object record, creating a new record if one does not exist.'
+);
 
-CREATE FUNCTION object_reference.object__getsert_w_group_id(
+SELECT __object_reference.create_function(
+  'object_reference.object__getsert_w_group_id'
+  , $args$
   object_type   cat_tools.object_type
   , object_name text
   , secondary text DEFAULT NULL
   , object_group_id int DEFAULT NULL
-) RETURNS int LANGUAGE plpgsql AS $body$
+$args$
+  , 'int LANGUAGE plpgsql'
+  , $body$
 DECLARE
   c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
 
@@ -372,24 +511,43 @@ BEGIN
 
   RETURN (_object_reference.object__getsert( object_type, v_objid, v_subid, object_group_id )).object_id;
 END
-$body$;
+$body$
+  , 'Return a object_id for an object. Allows specifying a object group ID to add the object to. See also object__getsert().'
+  , 'object_reference__usage'
+);
 
-CREATE FUNCTION object_reference.object__getsert(
+SELECT __object_reference.create_function(
+  'object_reference.object__getsert'
+  , $args$
   object_type   cat_tools.object_type
   , object_name text
   , secondary text DEFAULT NULL
   , object_group_name _object_reference.object_group.object_group_name%TYPE DEFAULT NULL
-) RETURNS int LANGUAGE sql AS $body$
+$args$
+  , 'int LANGUAGE sql'
+  , $body$
 SELECT object_reference.object__getsert_w_group_id(
   $1, $2, $3
   , CASE WHEN object_group_name IS NOT NULL THEN
       (object_reference.object_group__get($4)).object_group_id
     END
 )
-$body$;
+$body$
+  , 'Return a object_id for an object. Allows specifying a object group name to add the object to. See also object__getsert_w_group_id().'
+  , 'object_reference__usage'
+);
 
-CREATE FUNCTION _object_reference._etg_fix_identity(
-) RETURNS event_trigger LANGUAGE plpgsql AS $body$
+/*
+ * ddl_capture
+ */
+
+
+
+SELECT __object_reference.create_function(
+  '_object_reference._etg_fix_identity'
+  , ''
+  , 'event_trigger LANGUAGE plpgsql'
+  , $body$
 DECLARE
   r_ddl record;
   r record;
@@ -424,9 +582,14 @@ BEGIN
     RAISE DEBUG 'modified_objects(): %', r;
   END LOOP;
 END
-$body$;
-CREATE FUNCTION _object_reference._etg_drop(
-) RETURNS event_trigger LANGUAGE plpgsql AS $body$
+$body$
+  , 'Event trigger function to update any records with object names or args that have changed.'
+);
+SELECT __object_reference.create_function(
+  '_object_reference._etg_drop'
+  , ''
+  , 'event_trigger LANGUAGE plpgsql'
+  , $body$
 DECLARE
   r_object _object_reference.object;
   r record;
@@ -454,7 +617,9 @@ BEGIN
     DELETE FROM _object_reference.object WHERE object_id = r_object.object_id;
   END LOOP;
 END
-$body$;
+$body$
+  , 'Event trigger function to drop object records when objects are removed.'
+);
 
 CREATE EVENT TRIGGER zzz__object_reference_drop
   ON sql_drop
@@ -472,6 +637,14 @@ CREATE EVENT TRIGGER zzz_object_reference_end
 /*
  * Drop "temporary" objects
  */
+DROP FUNCTION __object_reference.create_function(
+  function_name text
+  , args text
+  , options text
+  , body text
+  , comment text
+  , grants text
+);
 DROP FUNCTION __object_reference.exec(
   sql text
 );
