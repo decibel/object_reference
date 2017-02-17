@@ -1,0 +1,29 @@
+\set ECHO none
+1..24
+ok 1 - Register test table 1
+ok 2 - object_group__create(...) for group name that is too long throws error
+ok 3 - object_group__create('object reference test group')
+ok 4 - object_group__get(...)for bogus ID throws error
+ok 5 - object_group__get(...)for missing group throws error
+ok 6 - Get test group
+ok 7 - Verify get returns correct data
+ok 8 - object_group__object__add(...) works for test_table_1
+ok 9 - object__getsert with bogus group name
+ok 10 - Register test column
+ok 11 - Register test table 2
+ok 12 - Dropping col1 fails
+ok 13 - Dropping test_table_2 fails
+ok 14 - Removing test group fails
+ok 15 - Dropping col2 works
+ok 16 - __object__remove() with bogus group throws error)
+ok 17 - __object__remove() with bogus object throws error)
+ok 18 - __object__remove() for test_table_1 works
+ok 19 - Dropping test_table_1 fails
+ok 20 - object_group__object__add(...)for bogus ID throws error
+ok 21 - object_group__object__add(...)for missing group throws error
+ok 22 - Removing group with items in it fails
+ok 23 - __object__remove() for col1 works
+ok 24 - __object__remove() for test_table_2 works
+ok 25 - Removing empty group works
+# Looks like you planned 24 tests but ran 25
+# TRANSACTION INTENTIONALLY LEFT OPEN!

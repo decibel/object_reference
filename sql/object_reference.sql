@@ -101,20 +101,131 @@ CREATE UNIQUE INDEX object__u_regoperator ON _object_reference.object(regoperato
 CREATE UNIQUE INDEX object__u_regprocedure ON _object_reference.object(regprocedure) WHERE regprocedure IS NOT NULL;
 CREATE UNIQUE INDEX object__u_regtype ON _object_reference.object(regtype) WHERE regtype IS NOT NULL;
 
-CREATE FUNCTION _object_reference.object__get_loose(
-  classid oid
-  , objid oid
-  , objsubid int DEFAULT 0
-) RETURNS _object_reference.object LANGUAGE sql STABLE AS $body$
-SELECT *
-  FROM _object_reference.object o
-  WHERE (o.classid, o.objid, o.objsubid) = ($1, $2, $3)
+
+/*
+ * OBJECT GROUP
+ */
+
+CREATE TABLE _object_reference.object_group(
+  object_group_id         serial        PRIMARY KEY
+  , object_group_name     varchar(200)  NOT NULL
+);
+CREATE UNIQUE INDEX object_group__u_object_group_name__lower ON _object_reference.object_group(lower(object_group_name));
+
+CREATE TABLE _object_reference.object_group__object(
+  object_group_id         int     NOT NULL REFERENCES _object_reference.object_group
+  , object_id             int     NOT NULL REFERENCES _object_reference.object
+  , CONSTRAINT object_group__object__u_object_group_id__object_id UNIQUE( object_group_id, object_id )
+);
+
+-- __get
+CREATE FUNCTION object_reference.object_group__get(
+  object_group_name _object_reference.object_group.object_group_name%TYPE
+) RETURNS _object_reference.object_group LANGUAGE plpgsql STABLE AS $body$
+DECLARE
+  r _object_reference.object_group;
+BEGIN
+  SELECT INTO STRICT r
+    *
+    FROM _object_reference.object_group ogo
+    WHERE lower(ogo.object_group_name) = lower(object_group__get.object_group_name)
+  ;
+  RETURN r;
+EXCEPTION WHEN no_data_found THEN
+  RAISE 'object group "%" does not exist', object_group_name
+    USING ERRCODE = 'no_data_found'
+  ;
+END
+$body$;
+CREATE FUNCTION object_reference.object_group__get(
+  object_group_id _object_reference.object_group.object_group_id%TYPE
+) RETURNS _object_reference.object_group LANGUAGE plpgsql STABLE AS $body$
+DECLARE
+  r _object_reference.object_group;
+BEGIN
+  SELECT INTO STRICT r
+    *
+    FROM _object_reference.object_group ogo
+    WHERE (ogo.object_group_id) = (object_group__get.object_group_id)
+  ;
+  RETURN r;
+EXCEPTION WHEN no_data_found THEN
+  RAISE 'object group id % does not exist', object_group_id
+    USING ERRCODE = 'no_data_found'
+  ;
+END
 $body$;
 
+-- __create
+CREATE FUNCTION object_reference.object_group__create(
+  object_group_name _object_reference.object_group.object_group_name%TYPE
+) RETURNS int LANGUAGE sql AS $body$
+INSERT INTO _object_reference.object_group(object_group_name) VALUES(object_group_name)
+  RETURNING object_group_id
+$body$;
+
+-- __remove
+CREATE FUNCTION object_reference.object_group__remove(
+  object_group_id _object_reference.object_group.object_group_id%TYPE
+) RETURNS void LANGUAGE sql AS $body$
+DELETE FROM _object_reference.object_group
+  -- This is to ensure group exists
+  WHERE object_group_id = (object_reference.object_group__get($1)).object_group_id
+$body$;
+CREATE FUNCTION object_reference.object_group__remove(
+  object_group_name _object_reference.object_group.object_group_name%TYPE
+) RETURNS void LANGUAGE sql AS $body$
+DELETE FROM _object_reference.object_group
+  -- This is to ensure group exists
+  WHERE object_group_name = (object_reference.object_group__get($1)).object_group_name
+$body$;
+
+-- __object__add
+CREATE FUNCTION object_reference.object_group__object__add(
+  object_group_id _object_reference.object_group__object.object_group_id%TYPE
+  , object_id _object_reference.object_group__object.object_id%TYPE
+) RETURNS void LANGUAGE sql AS $body$
+  INSERT INTO _object_reference.object_group__object AS ogo(object_group_id, object_id)
+    VALUES($1, $2)
+    ON CONFLICT (object_group_id, object_id) DO NOTHING
+$body$;
+
+-- __object__remove
+CREATE FUNCTION object_reference.object_group__object__remove(
+  object_group_id _object_reference.object_group__object.object_group_id%TYPE
+  , object_id _object_reference.object_group__object.object_id%TYPE
+) RETURNS void LANGUAGE plpgsql AS $body$
+BEGIN
+  DELETE FROM _object_reference.object_group__object AS ogo
+    WHERE
+      (
+        ogo.object_group_id
+        , ogo.object_id
+      ) = (
+        -- This is to ensure group exists
+        (object_reference.object_group__get($1)).object_group_id
+        , object_group__object__remove.object_id
+      )
+  ;
+
+  IF NOT FOUND THEN
+    -- We know group exists, so issue must be that object doesn't exist
+    RAISE 'object id % does not exist', object_id
+      USING ERRCODE = 'no_data_found'
+    ;
+  END IF;
+END
+$body$;
+
+
+/*
+ * OBJECT GETSERT
+ */
 CREATE FUNCTION _object_reference.object__getsert(
   object_type _object_reference.object.object_type%TYPE
   , objid _object_reference.object.objid%TYPE
   , objsubid _object_reference.object.objsubid%TYPE
+  , object_group_id int DEFAULT NULL
 ) RETURNS _object_reference.object LANGUAGE plpgsql AS $body$
 DECLARE
   c_reg_type name := cat_tools.object__reg_type(object_type); -- Verifies regtype is supported, if there is one
@@ -153,9 +264,16 @@ BEGIN
   END IF;
 
   FOR i IN 1..10 LOOP
-    -- TODO: create a smart update function that only updates if data has changed, and always returns relevant data. Necessary to deal with object_* fields possibly changing.
-    r_object := _object_reference.object__get_loose(c_classid, objid, objsubid);
-    IF NOT r_object IS NULL THEN
+    SELECT INTO r_object
+        *
+      FROM _object_reference.object o
+      WHERE (o.classid, o.objid, o.objsubid) = (c_classid, object__getsert.objid, object__getsert.objsubid)
+      FOR KEY SHARE
+    ;
+    IF FOUND THEN
+      IF object_group_id IS NOT NULL THEN
+        PERFORM object_reference.object_group__object__add(object_group_id, r_object.object_id);
+      END IF;
       RETURN r_object;
     END IF;
 
@@ -164,6 +282,10 @@ BEGIN
         INTO r_object
         USING object_type, c_classid, objid, objsubid, r_address.object_names, r_address.object_args
       ;
+
+      IF object_group_id IS NOT NULL THEN
+        PERFORM object_reference.object_group__object__add(object_group_id, r_object.object_id);
+      END IF;
       RETURN r_object;
     EXCEPTION WHEN unique_violation THEN
       NULL;
@@ -174,10 +296,11 @@ BEGIN
 END
 $body$;
 
-CREATE FUNCTION object_reference.object__getsert(
+CREATE FUNCTION object_reference.object__getsert_w_group_id(
   object_type   cat_tools.object_type
   , object_name text
   , secondary text DEFAULT NULL
+  , object_group_id int DEFAULT NULL
 ) RETURNS int LANGUAGE plpgsql AS $body$
 DECLARE
   c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
@@ -201,7 +324,7 @@ BEGIN
   WHEN 'pg_catalog.pg_attribute'::regclass THEN
     -- Will throw error if column isn't valid
     v_objid := object_name::regclass;
-    v_subid := cat_tools.pg_attribute__get(v_objid, secondary);
+    v_subid := (cat_tools.pg_attribute__get(v_objid, secondary)).attnum;
     secondary = NULL;
 
   ELSE
@@ -247,8 +370,22 @@ BEGIN
     RAISE 'secondary may not be specified for % objects', object_type;
   END IF;
 
-  RETURN (_object_reference.object__getsert( object_type, v_objid, v_subid )).object_id;
+  RETURN (_object_reference.object__getsert( object_type, v_objid, v_subid, object_group_id )).object_id;
 END
+$body$;
+
+CREATE FUNCTION object_reference.object__getsert(
+  object_type   cat_tools.object_type
+  , object_name text
+  , secondary text DEFAULT NULL
+  , object_group_name _object_reference.object_group.object_group_name%TYPE DEFAULT NULL
+) RETURNS int LANGUAGE sql AS $body$
+SELECT object_reference.object__getsert_w_group_id(
+  $1, $2, $3
+  , CASE WHEN object_group_name IS NOT NULL THEN
+      (object_reference.object_group__get($4)).object_group_id
+    END
+)
 $body$;
 
 CREATE FUNCTION _object_reference._etg_fix_identity(
@@ -313,6 +450,7 @@ BEGIN
         OR d.objsubid = object.objsubid
   LOOP
     RAISE DEBUG 'deleting object %', r_object;
+    -- TODO: trap FK violation error on groups and output something better
     DELETE FROM _object_reference.object WHERE object_id = r_object.object_id;
   END LOOP;
 END
