@@ -1,0 +1,76 @@
+\set ECHO none
+1..73
+ok 1 - All object types are being tested.
+ok 2 - Verify object_reference.unsupported()
+ok 3 - prereq: CREATE DOMAIN "test domain" int
+ok 4 - prereq: CREATE FUNCTION tg_null() RETURNS trigger LANGUAGE plpgsql AS $body$BEGIN RETURN NEW; END$body$
+ok 5 - prereq: CREATE TYPE "test type"
+ok 6 - prereq: CREATE FUNCTION "test type in"(cstring) RETURNS "test type" LANGUAGE 'internal' IMMUTABLE AS 'int2in'
+ok 7 - prereq: CREATE FUNCTION "test type out"("test type") RETURNS cstring LANGUAGE 'internal' IMMUTABLE AS 'int2in'
+ok 8 - CREATE table "test table" ("test column" int)
+ok 9 - CREATE index "test table test index" ON "test table"("test column")
+ok 10 - CREATE sequence "test sequence"
+ok 11 - CREATE view "test view" AS SELECT * FROM "test table"
+ok 12 - CREATE materialized view "test materialized view" AS SELECT * FROM "test table"
+ok 13 - ALTER TABLE "test table" ADD COLUMN "second test column" int
+ok 14 - ALTER DOMAIN "test domain" ADD CONSTRAINT "test domain constraint" CHECK(true)
+ok 15 - ALTER TABLE "test table" ADD CONSTRAINT "test table constraint" CHECK(true)
+ok 16 - CREATE FUNCTION "test function"("test column" int DEFAULT 0) RETURNS int LANGUAGE sql AS 'SELECT $1'
+ok 17 - CREATE TYPE "test type" (INPUT = "test type in", OUTPUT = "test type out")
+ok 18 - CREATE CAST ("test type" AS int4) WITH INOUT
+ok 19 - ALTER TABLE "test table" ALTER "test column" SET DEFAULT 0
+ok 20 - CREATE TRIGGER "test trigger" AFTER INSERT ON "test table" FOR EACH ROW EXECUTE PROCEDURE tg_null()
+ok 21 - Register: INSERT INTO obj_ref VALUES(13, object_reference.object__getsert('trigger', '"test table"', 'test trigger'))
+ok 22 - Register: INSERT INTO obj_ref VALUES(12, object_reference.object__getsert('default value', '"test table"', 'test column'))
+ok 23 - Register: INSERT INTO obj_ref VALUES(11, object_reference.object__getsert('cast', '"test type"', 'integer'))
+ok 24 - Register: INSERT INTO obj_ref VALUES(10, object_reference.object__getsert('type', '"test type"', NULL))
+ok 25 - Register: INSERT INTO obj_ref VALUES(9, object_reference.object__getsert('function', '"test function"', '"test column" int DEFAULT 0'))
+ok 26 - Register: INSERT INTO obj_ref VALUES(8, object_reference.object__getsert('table constraint', '"test table"', 'test table constraint'))
+ok 27 - Register: INSERT INTO obj_ref VALUES(7, object_reference.object__getsert('domain constraint', '"test domain"', 'test domain constraint'))
+ok 28 - Register: INSERT INTO obj_ref VALUES(6, object_reference.object__getsert('table column', '"test table"', 'second test column'))
+ok 29 - Register: INSERT INTO obj_ref VALUES(5, object_reference.object__getsert('materialized view', '"test materialized view"', NULL))
+ok 30 - Register: INSERT INTO obj_ref VALUES(4, object_reference.object__getsert('view', '"test view"', NULL))
+ok 31 - Register: INSERT INTO obj_ref VALUES(3, object_reference.object__getsert('sequence', '"test sequence"', NULL))
+ok 32 - Register: INSERT INTO obj_ref VALUES(2, object_reference.object__getsert('index', '"test table test index"', NULL))
+ok 33 - Register: INSERT INTO obj_ref VALUES(1, object_reference.object__getsert('table', '"test table"', NULL))
+ok 34 - Verify getsert returns same ID
+ok 35 - Verify getsert returns same ID
+ok 36 - Verify getsert returns same ID
+ok 37 - Verify getsert returns same ID
+ok 38 - Verify getsert returns same ID
+ok 39 - Verify getsert returns same ID
+ok 40 - Verify getsert returns same ID
+ok 41 - Verify getsert returns same ID
+ok 42 - Verify getsert returns same ID
+ok 43 - Verify getsert returns same ID
+ok 44 - Verify getsert returns same ID
+ok 45 - Verify getsert returns same ID
+ok 46 - Verify getsert returns same ID
+ok 47 - Drop should fail while reference exists
+ok 48 - DROP TRIGGER "test trigger" ON "test table"
+ok 49 - Drop should fail while reference exists
+ok 50 - ALTER TABLE "test table" ALTER "test column" DROP DEFAULT
+ok 51 - Drop should fail while reference exists
+ok 52 - DROP CAST ("test type" AS int4)
+ok 53 - Drop should fail while reference exists
+ok 54 - DROP TYPE "test type" CASCADE; -- Need to cascade due to functions
+ok 55 - Drop should fail while reference exists
+ok 56 - DROP FUNCTION "test function"(int)
+ok 57 - Drop should fail while reference exists
+ok 58 - ALTER TABLE "test table" DROP CONSTRAINT "test table constraint"
+ok 59 - Drop should fail while reference exists
+ok 60 - ALTER DOMAIN "test domain" DROP CONSTRAINT "test domain constraint"
+ok 61 - Drop should fail while reference exists
+ok 62 - ALTER TABLE "test table" DROP COLUMN "second test column"
+ok 63 - Drop should fail while reference exists
+ok 64 - DROP materialized view "test materialized view"
+ok 65 - Drop should fail while reference exists
+ok 66 - DROP view "test view"
+ok 67 - Drop should fail while reference exists
+ok 68 - DROP sequence "test sequence"
+ok 69 - Drop should fail while reference exists
+ok 70 - DROP index "test table test index"
+ok 71 - Drop should fail while reference exists
+ok 72 - DROP table "test table"
+ok 73 - No object references remain
+# TRANSACTION INTENTIONALLY LEFT OPEN!
