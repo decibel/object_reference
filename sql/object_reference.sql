@@ -181,6 +181,10 @@ CREATE UNIQUE INDEX object__u_regoperator ON _object_reference.object(regoperato
 CREATE UNIQUE INDEX object__u_regprocedure ON _object_reference.object(regprocedure) WHERE regprocedure IS NOT NULL;
 CREATE UNIQUE INDEX object__u_regtype ON _object_reference.object(regtype) WHERE regtype IS NOT NULL;
 
+
+/*
+ * Unsupported object types
+ */
 SELECT __object_reference.create_function(
   'object_reference.unsupported'
   , ''
@@ -221,6 +225,56 @@ SELECT __object_reference.create_function(
 SELECT object_reference.unsupported(object_type::cat_tools.object_type)
 $body$
   , 'Is a object_type unsupported?'
+  , 'object_reference__usage'
+);
+
+/*
+ * Untested object types
+ */
+SELECT __object_reference.create_function(
+  'object_reference.untested'
+  , ''
+  , 'cat_tools.object_type[] LANGUAGE sql IMMUTABLE'
+  , $body$
+SELECT '{
+foreign table, foreign table column, aggregate, collation, conversion, language,
+large object, operator, operator class, operator family, operator of access method,
+function of access method, rule, text search parser, text search dictionary,
+text search template, text search configuration, foreign-data wrapper, server,
+user mapping, default acl, transform, access method, extension, policy
+}'::cat_tools.object_type[]
+$body$
+  , 'Get details about the specified object group'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.untested_srf'
+  , ''
+  , 'SETOF cat_tools.object_type LANGUAGE sql IMMUTABLE'
+  , $body$
+SELECT * FROM unnest(object_reference.untested())
+$body$
+  , 'Get details about the specified object group'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.untested'
+  , 'object_type cat_tools.object_type'
+  , 'boolean LANGUAGE sql IMMUTABLE'
+  , $body$
+SELECT object_type = ANY(object_reference.untested())
+$body$
+  , 'Is a object_type untested?'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.untested'
+  , 'object_type text'
+  , 'boolean LANGUAGE sql IMMUTABLE'
+  , $body$
+SELECT object_reference.untested(object_type::cat_tools.object_type)
+$body$
+  , 'Is a object_type untested?'
   , 'object_reference__usage'
 );
 

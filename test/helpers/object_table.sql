@@ -134,21 +134,6 @@ INSERT INTO test_prereq VALUES
 , ($$CREATE FUNCTION "test type out"("test type") RETURNS cstring LANGUAGE 'internal' IMMUTABLE AS 'int2in'$$)
 ;
 
-CREATE TABLE test_todo AS SELECT btrim(todo)::cat_tools.object_type AS todo FROM regexp_split_to_table( btrim( $TODO$
-foreign table, foreign table column, aggregate, collation, conversion, language,
-large object, operator, operator class, operator family, operator of access method,
-function of access method, rule, text search parser, text search dictionary,
-text search template, text search configuration, foreign-data wrapper, server,
-user mapping, default acl, transform, access method, extension, policy
-$TODO$
-      , E'\n'
-    ) -- btrim
-    , ',(\s|\n)*' -- Match ',' followed by any whitespace, including newlines
-  ) t(todo)
-;
-INSERT INTO test_todo VALUES('schema'); -- Schemas are intentionally skipped
-ALTER TABLE test_todo ADD PRIMARY KEY(todo);
-
 -- \N is null character
 COPY test_object(object_type, object_name, secondary, create_command, drop_command) FROM STDIN (DELIMITER '|');
 table|test table||%("test column" int)|

@@ -31,9 +31,10 @@ SELECT bag_eq(
   $$
 SELECT object_type FROM test_object
 UNION ALL
-SELECT * FROM test_todo
+SELECT * FROM object_reference.untested_srf()
 UNION ALL
 SELECT * FROM object_reference.unsupported_srf()
+UNION ALL SELECT 'schema' -- Tested via other means
 $$
   , $$SELECT e::cat_tools.object_type FROM cat_tools.enum_range_srf('cat_tools.object_type') e$$
   , 'All object types are being tested.'
