@@ -181,6 +181,49 @@ CREATE UNIQUE INDEX object__u_regoperator ON _object_reference.object(regoperato
 CREATE UNIQUE INDEX object__u_regprocedure ON _object_reference.object(regprocedure) WHERE regprocedure IS NOT NULL;
 CREATE UNIQUE INDEX object__u_regtype ON _object_reference.object(regtype) WHERE regtype IS NOT NULL;
 
+SELECT __object_reference.create_function(
+  'object_reference.unsupported'
+  , ''
+  , 'cat_tools.object_type[] LANGUAGE sql IMMUTABLE'
+  , $body$
+SELECT cat_tools.objects__shared()
+  || cat_tools.objects__address_unsupported()
+  || '{event trigger}'
+$body$
+  , 'Get details about the specified object group'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.unsupported_srf'
+  , ''
+  , 'SETOF cat_tools.object_type LANGUAGE sql IMMUTABLE'
+  , $body$
+SELECT * FROM unnest(object_reference.unsupported())
+$body$
+  , 'Get details about the specified object group'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.unsupported'
+  , 'object_type cat_tools.object_type'
+  , 'boolean LANGUAGE sql IMMUTABLE'
+  , $body$
+SELECT object_type = ANY(object_reference.unsupported())
+$body$
+  , 'Is a object_type unsupported?'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.unsupported'
+  , 'object_type text'
+  , 'boolean LANGUAGE sql IMMUTABLE'
+  , $body$
+SELECT object_reference.unsupported(object_type::cat_tools.object_type)
+$body$
+  , 'Is a object_type unsupported?'
+  , 'object_reference__usage'
+);
+
 
 /*
  * OBJECT GROUP
@@ -381,7 +424,9 @@ DECLARE
   i smallint;
   sql text;
 BEGIN
-  -- TODO: throw exception for unsupported object types (shared objects such as roles and databases)
+  IF object_reference.unsupported(object_type) THEN
+    RAISE 'object_type % is not supported', object_type;
+  END IF;
 
   SELECT INTO r_address * FROM pg_catalog.pg_identify_object_as_address(c_classid, objid, objsubid);
 
@@ -411,6 +456,10 @@ BEGIN
     END IF;
 
     BEGIN
+      RAISE DEBUG E'%\n    USING  %, %, %, %, %, %'
+        , c_insert
+        , object_type, c_classid, objid, objsubid, r_address.object_names, r_address.object_args
+      ;
       EXECUTE c_insert
         INTO r_object
         USING object_type, c_classid, objid, objsubid, r_address.object_names, r_address.object_args
@@ -447,6 +496,8 @@ DECLARE
   v_objid oid;
   v_subid int := 0;
 BEGIN
+  RAISE DEBUG '% "%" (secondary %) uses catalog %', object_type, object_name, secondary, c_catalog;
+
   -- Some catalogs need special handling
   CASE c_catalog
   -- Functions
@@ -461,9 +512,90 @@ BEGIN
 
   -- Columns
   WHEN 'pg_catalog.pg_attribute'::regclass THEN
-    -- Will throw error if column isn't valid
     v_objid := object_name::regclass;
+    -- Will throw error if column isn't valid
     v_subid := (cat_tools.pg_attribute__get(v_objid, secondary)).attnum;
+    secondary = NULL;
+
+  -- Defaults
+  WHEN 'pg_catalog.pg_attrdef'::regclass THEN
+    BEGIN
+      SELECT INTO STRICT v_objid
+          oid
+        FROM pg_catalog.pg_attrdef
+        WHERE adrelid = object_name::regclass
+          -- Will throw error if column isn't valid
+          AND adnum = (cat_tools.pg_attribute__get(object_name::regclass, secondary)).attnum
+      ;
+    EXCEPTION WHEN no_data_found THEN
+      RAISE 'default value for %.% does not exist', object_name::regclass, secondary
+        USING ERRCODE = 'undefined_object'
+      ;
+    END;
+    secondary = NULL;
+
+  -- Triggers
+  WHEN 'pg_catalog.pg_trigger'::regclass THEN
+    BEGIN
+      SELECT INTO STRICT v_objid
+          oid
+        FROM pg_catalog.pg_trigger
+        WHERE tgrelid = object_name::regclass
+          AND tgname = secondary
+      ;
+    EXCEPTION WHEN no_data_found THEN
+      RAISE 'trigger "%" for table "%" does not exist', secondary, object_name::regclass
+        USING ERRCODE = 'undefined_object'
+      ;
+    END;
+    secondary = NULL;
+
+  -- Constraints
+  WHEN 'pg_catalog.pg_constraint'::regclass THEN
+    DECLARE
+      v_relid oid = 0;
+      v_typid oid = 0;
+    BEGIN
+      CASE object_type
+        WHEN 'table constraint'::cat_tools.object_type THEN -- conrelid
+          v_relid := object_name::regclass;
+        WHEN 'domain constraint'::cat_tools.object_type THEN -- contypid
+          v_typid := object_name::regtype;
+        ELSE
+          RAISE 'unexpected object type % for a constraint', object_type;
+      END CASE;
+
+      BEGIN
+        SELECT INTO STRICT v_objid
+            oid
+          FROM pg_catalog.pg_constraint
+          WHERE conname = secondary
+            AND conrelid = v_relid
+            AND contypid = v_typid
+          ;
+      EXCEPTION WHEN no_data_found THEN
+        -- At this point regclass or regtype should have thrown an error if the parent object doesn't exist
+        RAISE 'constraint "%" does not exist', secondary
+          USING ERRCODE = 'undefined_object'
+        ;
+      END;
+    END;
+    secondary = NULL;
+
+  -- Casts
+  WHEN 'pg_catalog.pg_cast'::regclass THEN
+    BEGIN
+      SELECT INTO STRICT v_objid
+          oid
+        FROM pg_catalog.pg_cast
+        WHERE castsource = object_name::regtype
+          AND casttarget = secondary::regtype
+        ;
+    EXCEPTION WHEN no_data_found THEN
+      RAISE 'cast from "%" to "%" does not exist', object_name, secondary
+        USING ERRCODE = 'undefined_object'
+      ;
+    END;
     secondary = NULL;
 
   ELSE
@@ -483,11 +615,6 @@ BEGIN
          */
         v_name_field := substring(regexp_replace(c_catalog::text, '(pg_catalog\.)?pg_', ''), 1, 3);
 
-        v_name_field := CASE v_name_field
-            WHEN 'tri' THEN 'tg' -- pg_trigger
-            ELSE v_name_field
-          END || 'name'
-        ;
         sql := format(
           'SELECT oid FROM %s WHERE %I = %L'
           , c_catalog -- No need to quote
@@ -501,6 +628,7 @@ BEGIN
           , c_reg_type -- No need to quote
         );
       END IF;
+      RAISE DEBUG 'looking up % % via %', object_type, object_name, sql;
       EXECUTE sql INTO STRICT v_objid;
     END;
   END CASE;

@@ -1,6 +1,6 @@
 include pgxntool/base.mk
 
-testdeps: $(wildcard test/*.sql) # Be careful not to include directories in this
+testdeps: $(wildcard test/*.sql test/helpers/*.sql) # Be careful not to include directories in this
 
 install: cat_tools count_nulls
 
