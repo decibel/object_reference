@@ -11,6 +11,23 @@ BEGIN
   RAISE DEBUG 'search_path changed to %', current_setting('search_path');
 END
 $$;
+/*
+DO $$
+DECLARE
+  c_schema CONSTANT name := (SELECT extnamespace::regnamespace::text FROM pg_extension WHERE extname = 'cat_tools');
+BEGIN
+  IF c_schema IS NULL THEN
+    RAISE 'extension cat_tools is not installed';
+  END IF;
+
+  IF c_schema <> 'cat_tools' THEN
+    RAISE 'having the cat_tools extension installed anywhere but the "cat_tools" schema is not currently supported'
+      USING DETAIL = format('current schema for cat_tools is %s', c_schema)
+    ;
+  END IF;
+END
+$$;
+*/
 
 DO $$
 BEGIN

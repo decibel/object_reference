@@ -2,6 +2,10 @@
 
 \i test/load.sql
 
+/*
+ * SEE ALSO other/load_all.sql!
+ */
+
 CREATE SCHEMA test_support;
 SET search_path = test_support, tap, public;
 
