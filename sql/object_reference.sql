@@ -1,4 +1,7 @@
 SET LOCAL client_min_messages = WARNING;
+\echo This extension must be loaded via 'CREATE EXTENSION object_reference;'
+\echo You really, REALLY do NOT want to try and load this via psql!!!
+\echo It will FAIL during pg_dump! \quit
 
 -- This BS is because count_nulls is relocatable, so could be in any schema
 DO $$
@@ -44,6 +47,7 @@ $$;
  * "temporary" schema instead.
  */
 CREATE SCHEMA __object_reference;
+
 CREATE FUNCTION __object_reference.exec(
   sql text
 ) RETURNS void LANGUAGE plpgsql AS $body$
@@ -53,6 +57,16 @@ BEGIN
 END
 $body$;
 
+CREATE FUNCTION __object_reference.safe_dump(
+  relation regclass
+  , filter text DEFAULT ''
+) RETURNS void LANGUAGE plpgsql AS $body$
+BEGIN
+  PERFORM pg_catalog.pg_extension_config_dump(relation, filter);
+EXCEPTION WHEN feature_not_supported THEN
+  RAISE WARNING 'I promise you will be sorry if you try to use this as anything other than an extension!';
+END
+$body$;
 
 CREATE FUNCTION __object_reference.create_function(
   function_name text
@@ -198,6 +212,7 @@ CREATE UNIQUE INDEX object__u_regoperator ON _object_reference.object(regoperato
 CREATE UNIQUE INDEX object__u_regprocedure ON _object_reference.object(regprocedure) WHERE regprocedure IS NOT NULL;
 CREATE UNIQUE INDEX object__u_regtype ON _object_reference.object(regtype) WHERE regtype IS NOT NULL;
 
+SELECT __object_reference.safe_dump('_object_reference.object');
 
 /*
  * Unsupported object types
@@ -299,18 +314,19 @@ $body$
 /*
  * OBJECT GROUP
  */
-
 CREATE TABLE _object_reference.object_group(
   object_group_id         serial        PRIMARY KEY
   , object_group_name     varchar(200)  NOT NULL
 );
 CREATE UNIQUE INDEX object_group__u_object_group_name__lower ON _object_reference.object_group(lower(object_group_name));
+SELECT __object_reference.safe_dump('_object_reference.object_group');
 
 CREATE TABLE _object_reference.object_group__object(
   object_group_id         int     NOT NULL REFERENCES _object_reference.object_group
   , object_id             int     NOT NULL REFERENCES _object_reference.object
   , CONSTRAINT object_group__object__u_object_group_id__object_id UNIQUE( object_group_id, object_id )
 );
+SELECT __object_reference.safe_dump('_object_reference.object_group__object');
 
 -- __get
 SELECT __object_reference.create_function(
@@ -843,6 +859,10 @@ DROP FUNCTION __object_reference.create_function(
   , body text
   , comment text
   , grants text
+);
+DROP FUNCTION __object_reference.safe_dump(
+  relation regclass
+  , text
 );
 DROP FUNCTION __object_reference.exec(
   sql text

@@ -1,3 +1,6 @@
+# Temporary test files
+test/temp_load.not_sql
+
 # Editor files
 .*.swp
 
