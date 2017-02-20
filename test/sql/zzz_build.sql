@@ -13,7 +13,7 @@ CREATE SCHEMA object_reference;
 
 -- doesn't work :/ SET client_min_messages = FATAL; -- Need to surpress WARNING or turn down verbosity. Suppressing WARNING seems the better idea...
 -- Need to do this instead so that results are stable across versions (no line #s from ereport messages)
-\set VERBOSITE default
+\set VERBOSITY default
 \i test/temp_load.not_sql
 
 \echo Loaded OK!

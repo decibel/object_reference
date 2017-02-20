@@ -1,4 +1,19 @@
 \set ECHO none
+This extension must be loaded via CREATE EXTENSION object_reference;
+You really, REALLY do NOT want to try and load this via psql!!!
+psql:test/temp_load.not_sql:218: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+
+
+
+
+
+
+
+
+
+psql:test/temp_load.not_sql:325: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+
+psql:test/temp_load.not_sql:332: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
 
 
 
@@ -12,11 +27,5 @@
 
 
 
-
-
-
-
-
-
-
+Loaded OK!
 # TRANSACTION INTENTIONALLY LEFT OPEN!
