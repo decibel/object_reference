@@ -1,0 +1,4 @@
+\set ECHO none
+1..1
+ok 1 - _object_v__for_update matches _object_v
+# TRANSACTION INTENTIONALLY LEFT OPEN!

@@ -3,15 +3,15 @@
 ok 1 - Register schema-drop test objects
 ok 2 - Create objects_view
 ok 3 - Exactly 3 test view records
-ok 4 - CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 1)
+ok 4 - CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference._object_v__for_update('table column', 'table_under_test'::regclass, 1)
 ok 5 - Exactly 1 test object record
 ok 6 - Create column_test_view
 ok 7 - Exactly 1 test view record
-ok 8 - CREATE TEMP TABLE column_filler AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 2)
+ok 8 - CREATE TEMP TABLE column_filler AS SELECT * FROM _object_reference._object_v__for_update('table column', 'table_under_test'::regclass, 2)
 ok 9 - Exactly 1 test object record
 ok 10 - Create column_filler_view
 ok 11 - Exactly 1 test view record
-ok 12 - CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference.object__getsert('table', 'table_under_test'::regclass, 0)
+ok 12 - CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference._object_v__for_update('table', 'table_under_test'::regclass, 0)
 ok 13 - Exactly 1 test object record
 ok 14 - Create table_test_view
 ok 15 - Exactly 1 test view record

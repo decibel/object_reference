@@ -154,25 +154,40 @@ CREATE SCHEMA _object_reference;
 CREATE TABLE _object_reference.object(
   object_id       serial                  PRIMARY KEY
   , object_type   cat_tools.object_type   NOT NULL
-  , classid       oid                     NOT NULL
+--  , original_name text                    NOT NULL
+  , object_names text[]                  NOT NULL
+  , object_args  text[]                  NOT NULL
+  , CONSTRAINT object__u_object_names__object_args UNIQUE( object_type, object_names, object_args )
+  /* TODO: this can't be a trigger because some objects won't exist when a dump is loaded
+  , CONSTRAINT object__address_sanity
+    -- pg_get_object_address will throw an error if anything is wrong, so the IS NOT NULL is mostly pointless
+    CHECK( pg_catalog.pg_get_object_address(object_type::text, object_names, object_args) IS NOT NULL )
+    */
+);
+SELECT __object_reference.safe_dump('_object_reference.object');
+
+CREATE TABLE _object_reference._object_oid(
+  object_id       int                     PRIMARY KEY REFERENCES _object_reference.object ON DELETE CASCADE ON UPDATE CASCADE
+  , classid       regclass                NOT NULL
+  /* TODO: needs to be a trigger
     CONSTRAINT classid_must_match__object__address_classid
       CHECK( classid IS NOT DISTINCT FROM cat_tools.object__address_classid(object_type) )
+    */
   , objid         oid                     NOT NULL
-    CONSTRAINT objid_must_match CHECK(
+  , objsubid      int                     NOT NULL
+    CONSTRAINT objid_must_match CHECK( -- _object_reference._sanity() depends on this!
       objid IS NOT DISTINCT FROM coalesce(
-  regclass::oid -- Need to cast first item to generic OID
-  , regconfig
-  , regdictionary
-  , regnamespace -- SED: REQUIRES 9.5!
-  , regoperator
-  , regprocedure
-  , regtype
-  , object_oid
+        regclass::oid -- Need to cast first item to generic OID
+        , regconfig
+        , regdictionary
+        , regnamespace -- SED: REQUIRES 9.5!
+        , regoperator
+        , regprocedure
+        , regtype
+        , object_oid
       )
     )
-  , objsubid      int                     NOT NULL
   , CONSTRAINT object__u_classid__objid__objsubid UNIQUE( classid, objid, objsubid )
---  , original_name text                    NOT NULL
   , regclass      regclass
     CONSTRAINT regclass_classid CHECK( regclass IS NULL OR classid = cat_tools.object__reg_type_catalog('regclass') )
   , regconfig     regconfig
@@ -190,29 +205,281 @@ CREATE TABLE _object_reference.object(
   , regtype       regtype
     CONSTRAINT regtype_classid CHECK( regtype IS NULL OR classid = cat_tools.object__reg_type_catalog('regtype') )
   , object_oid    oid
-  , object_names text[]                  NOT NULL
-  , object_args  text[]                  NOT NULL
-  , CONSTRAINT object__u_object_names__object_args UNIQUE( object_type, object_names, object_args )
-  , CONSTRAINT object__address_sanity
-    -- pg_get_object_address will throw an error if anything is wrong, so the IS NOT NULL is mostly pointless
-    CHECK( pg_catalog.pg_get_object_address(object_type::text, object_names, object_args) IS NOT NULL )
 );
 CREATE TRIGGER null_count
   AFTER INSERT OR UPDATE
-  ON _object_reference.object
+  ON _object_reference._object_oid
   FOR EACH ROW EXECUTE PROCEDURE not_null_count_trigger(
-    8 -- First 5 fields, identifier field, object_* fields (can't do actual addition here)
+    5 -- First 4 fields, + 1
     , 'only one object reference field may be set'
   )
 ;
-CREATE UNIQUE INDEX object__u_regclass ON _object_reference.object(regclass) WHERE regclass IS NOT NULL;
-CREATE UNIQUE INDEX object__u_regconfig ON _object_reference.object(regconfig) WHERE regconfig IS NOT NULL;
-CREATE UNIQUE INDEX object__u_regdictionary ON _object_reference.object(regdictionary) WHERE regdictionary IS NOT NULL;
-CREATE UNIQUE INDEX object__u_regoperator ON _object_reference.object(regoperator) WHERE regoperator IS NOT NULL;
-CREATE UNIQUE INDEX object__u_regprocedure ON _object_reference.object(regprocedure) WHERE regprocedure IS NOT NULL;
-CREATE UNIQUE INDEX object__u_regtype ON _object_reference.object(regtype) WHERE regtype IS NOT NULL;
+CREATE UNIQUE INDEX _object_oid__u_regclass ON _object_reference._object_oid(regclass) WHERE regclass IS NOT NULL;
+CREATE UNIQUE INDEX _object_oid__u_regconfig ON _object_reference._object_oid(regconfig) WHERE regconfig IS NOT NULL;
+CREATE UNIQUE INDEX _object_oid__u_regdictionary ON _object_reference._object_oid(regdictionary) WHERE regdictionary IS NOT NULL;
+CREATE UNIQUE INDEX _object_oid__u_regoperator ON _object_reference._object_oid(regoperator) WHERE regoperator IS NOT NULL;
+CREATE UNIQUE INDEX _object_oid__u_regprocedure ON _object_reference._object_oid(regprocedure) WHERE regprocedure IS NOT NULL;
+CREATE UNIQUE INDEX _object_oid__u_regtype ON _object_reference._object_oid(regtype) WHERE regtype IS NOT NULL;
 
-SELECT __object_reference.safe_dump('_object_reference.object');
+SELECT __object_reference.create_function(
+  '_object_reference._sanity'
+  , $args$
+  obj _object_reference.object
+  , id _object_reference._object_oid
+  , OUT names_ok boolean
+  , OUT ids_ok boolean
+  , OUT ids_exist boolean
+$args$
+  , 'RECORD LANGUAGE plpgsql STABLE'
+  , $body$
+DECLARE
+  r record;
+BEGIN
+  ASSERT NOT obj IS NULL, 'obj may not be null';
+  ASSERT id IS NULL OR obj.object_id = id.object_id, 'id must be null or object_ids must match';
+
+  ids_exist := NOT (id IS NULL); -- Remember this is NOT the same as id IS NOT NULL!
+
+  BEGIN
+    r := pg_catalog.pg_get_object_address(obj.object_type::text, obj.object_names, obj.object_args);
+    names_ok := true;
+
+    -- Assume that if get_object_address worked then the names are at least valid
+    ids_ok := r IS NOT DISTINCT FROM (id.classid::oid, id.objid, id.objsubid);
+  EXCEPTION
+    WHEN others THEN
+      IF
+        SQLSTATE IN(
+          '22023' -- invalid_parameter_value
+          , '3F000' -- invalid_schema_name
+          , '42703' -- undefined_column
+          , '42704' -- undefined_object
+          , '42883' -- undefined_function
+        )
+        OR SQLSTATE LIKE '42P%' -- Matches a bunch of codes, including undefined_* and invalid_*_definition
+      THEN
+        names_ok := false;
+        ids_ok := false; -- Should we see if pg_object_identity_as_address works??
+      ELSE
+        RAISE WARNING 'Unexpected error!!';
+        RAISE; -- Unexpected, so re-raise
+      END IF;
+  END;
+END
+$body$
+  , 'Check the sanity of object and _object_oid'
+);
+
+CREATE VIEW _object_reference._object_v AS
+  SELECT 
+      o.object_id
+      , o.object_type
+      , o.object_names
+      , o.object_args
+      , i.classid
+      , i.objid
+      , i.objsubid
+      , i.regclass
+      , i.regconfig
+      , i.regdictionary
+      , i.regnamespace
+      , i.regoperator
+      , i.regprocedure
+      , i.regtype
+      , i.object_oid
+      , s.*
+    FROM _object_reference.object o
+      LEFT JOIN _object_reference._object_oid i USING(object_id)
+      , _object_reference._sanity(o, i) s
+;
+CREATE VIEW _object_reference._object_v__for_update AS
+  SELECT 
+      o.object_id
+      , o.object_type
+      , o.object_names
+      , o.object_args
+      , i.classid
+      , i.objid
+      , i.objsubid
+      , i.regclass
+      , i.regconfig
+      , i.regdictionary
+      , i.regnamespace
+      , i.regoperator
+      , i.regprocedure
+      , i.regtype
+      , i.object_oid
+      , s.*
+    FROM _object_reference.object o
+      LEFT JOIN _object_reference._object_oid i USING(object_id)
+      , _object_reference._sanity(o, i) s
+    FOR UPDATE OF o
+;
+
+SELECT __object_reference.create_function(
+  '_object_reference._object_oid__add'
+  , $args$
+  object_id _object_reference._object_oid.object_id%TYPE
+  , object_type _object_reference.object.object_type%TYPE DEFAULT NULL
+  , classid _object_reference._object_oid.classid%TYPE DEFAULT NULL
+  , objid _object_reference._object_oid.objid%TYPE DEFAULT NULL
+  , objsubid _object_reference._object_oid.objsubid%TYPE DEFAULT NULL
+$args$
+  , '_object_reference._object_v LANGUAGE plpgsql'
+  , $body$
+DECLARE
+  r_object_v _object_reference._object_v;
+BEGIN
+  IF object_type IS NULL THEN
+    -- Should definitely exist
+    SELECT INTO STRICT object_type, classid, objid, objsubid
+        object_type, classid, objid, objsubid
+      FROM _object_reference.object o
+        , pg_catalog.pg_get_object_address(o.object_type::text, o.object_names, o.object_args)
+      WHERE o.object_id = _object_oid__add.object_id
+    ;
+  END IF;
+  DECLARE
+    c_reg_type name := cat_tools.object__reg_type(object_type); -- Verifies regtype is supported, if there is one
+    c_oid_field CONSTANT name := coalesce(c_reg_type, 'object_oid');
+
+    c_oid_insert CONSTANT text := format(
+      --USING object_id, classid, objid, objsubid
+        $$INSERT INTO _object_reference._object_oid(object_id, classid, objid, objsubid, %I)
+            SELECT $1, $2, $3, $4, $3::%I$$
+        , c_oid_field
+        , coalesce(c_reg_type, 'oid')
+      )
+    ;
+  BEGIN
+    RAISE DEBUG E'%\n    USING  %, %, %, %'
+      , c_oid_insert
+      , object_id, classid, objid, objsubid
+    ;
+    EXECUTE c_oid_insert
+      USING object_id, classid, objid, objsubid
+    ;
+
+    SELECT INTO STRICT r_object_v -- Record better exist!
+        *
+      FROM _object_reference._object_v__for_update o
+      WHERE o.object_id = _object_oid__add.object_id
+    ;
+  END;
+
+  IF NOT r_object_v.ids_ok THEN
+    RAISE 'id mismatch for object_id %', object_id
+      USING
+        DETAIL = '_object_reference._object_v = ' || pg_catalog.row_to_json(r_object_v)
+        , HINT = 'this should not be possible'
+    ;
+  END IF;
+
+  RETURN r_object_v;
+END
+$body$
+  , 'Check the sanity of object and _object_oid'
+);
+
+/*
+ * fix_refs / post_restore
+ */
+SELECT __object_reference.create_function(
+  '_object_reference.fix_refs'
+  , 'warning_only boolean'
+  , 'void LANGUAGE plpgsql'
+  , $body$
+DECLARE
+  r_object_v _object_reference._object_v;
+BEGIN
+  FOR r_object_v IN
+    SELECT * FROM _object_reference._object_v
+  LOOP
+    CASE
+      WHEN r_object_v.names_ok AND r_object_v.ids_ok THEN
+        NULL; -- All good!
+      WHEN NOT r_object_v.names_ok THEN
+        IF r_object_v.ids_exist THEN
+          -- Only happens if things are out of sync, so intentionally treat this as an error
+          RAISE 'names/args are out of sync on object_id %', r_object_v.object_id
+            USING
+              DETAIL = '_object_reference._object_v = ' || pg_catalog.row_to_json(r_object_v)
+              , HINT = CASE WHEN r_object_v.ids_ok THEN
+                  E'The IDs are OK though. This should not happen, but may be fixable.\n'
+                    || 'Sanity-check the record and if OK then UPDATE _object_identity.object.'
+                ELSE
+                  'There is also a record in _object_identity._object_oid with invalid IDs. This should never happen.'
+                END
+          ;
+        ELSE
+          IF warning_only THEN
+            RAISE WARNING 'names not ok for object_id %', r_object_v.object_id
+              USING DETAIL = format(
+                'pg_catalog.pg_get_object_address(%L, %L, %L)'
+                , r_object_v.object_type
+                , r_object_v.object_names
+                , r_object_v.object_args
+              )
+            ;
+          ELSE
+            RAISE 'names not ok for object_id %', r_object_v.object_id
+              USING DETAIL = format(
+                'pg_catalog.pg_get_object_address(%L, %L, %L)'
+                , r_object_v.object_type
+                , r_object_v.object_names
+                , r_object_v.object_args
+              )
+            ;
+          END IF;
+        END IF;
+
+      -- at this point, names are OK but ids are not (or don't exist)
+      WHEN NOT r_object_v.ids_exist THEN
+        IF warning_only THEN
+          -- This is a normal condition during a restore, so just fix it
+          PERFORM _object_reference._object_oid__add(r_object_v.object_id);
+        ELSE
+          RAISE 'no record in _object_reference._object_oid for object_id %', r_object_v.object_id
+            USING
+              DETAIL = '_object_reference._object_v = ' || pg_catalog.row_to_json(r_object_v)
+              , HINT = 'It should be safe to fix this by calling _object_reference.fix_refs()'
+          ;
+        END IF;
+      WHEN r_object_v.ids_exist THEN
+        IF warning_only THEN
+          RAISE WARNING 'extraneous ID information for object_id %', r_object.object_id
+            USING
+              DETAIL = '_object_reference._object_v = ' || pg_catalog.row_to_json(r_object_v)
+              , HINT = E'The names are OK though. This should not happen, but may be fixable.\n'
+                    || 'Sanity-check the record and if OK then UPDATE _object_identity._object_v.'
+          ;
+        ELSE
+          RAISE 'extraneous ID information for object_id %', r_object.object_id
+            USING
+              DETAIL = '_object_reference._object_v = ' || pg_catalog.row_to_json(r_object_v)
+              , HINT = E'The names are OK though. This should not happen, but may be fixable.\n'
+                    || 'Sanity-check the record and if OK then UPDATE _object_identity._object_v.'
+          ;
+        END IF;
+    END CASE;
+  END LOOP;
+END
+$body$
+  , 'Fixes records in _object_reference._object_oid after a restore.'
+);
+SELECT __object_reference.create_function(
+  'object_reference.post_restore'
+  , ''
+  , 'void SECURITY DEFINER LANGUAGE sql'
+  , 'SELECT _object_reference.fix_refs(false)'
+  , 'Ensures all object references are correct after a restore.'
+  , 'object_reference__usage'
+);
+
+
+CREATE TABLE _object_reference._sentry AS SELECT 1 AS sentry;
+SELECT __object_reference.safe_dump('_object_reference._sentry');
+CREATE MATERIALIZED VIEW _object_reference._sentry_mv AS SELECT * FROM _object_reference._sentry;
 
 /*
  * Unsupported object types
@@ -481,32 +748,22 @@ $body$
  * OBJECT GETSERT
  */
 SELECT __object_reference.create_function(
-  '_object_reference.object__getsert'
+  '_object_reference._object_v__for_update'
   , $args$
   object_type _object_reference.object.object_type%TYPE
-  , objid _object_reference.object.objid%TYPE
-  , objsubid _object_reference.object.objsubid%TYPE
+  , objid _object_reference._object_oid.objid%TYPE
+  , objsubid _object_reference._object_oid.objsubid%TYPE
   , object_group_id int DEFAULT NULL
 $args$
-  , '_object_reference.object LANGUAGE plpgsql'
+  , '_object_reference._object_v LANGUAGE plpgsql'
   , $body$
 DECLARE
-  c_reg_type name := cat_tools.object__reg_type(object_type); -- Verifies regtype is supported, if there is one
   c_classid CONSTANT regclass := cat_tools.object__address_classid(object_type);
-  c_oid_field CONSTANT name := coalesce(c_reg_type, 'object_oid');
 
-  c_insert CONSTANT text := format(
-    -- USING object_type, c_classid, objid, objsubid, object_names, object_args
-      $$INSERT INTO _object_reference.object(object_type, classid, objid, objsubid, %I, object_names, object_args)
-          SELECT $1, $2, $3, $4, $3::%I, $5, $6
-        RETURNING *$$
-      , c_oid_field
-      , coalesce(c_reg_type, 'oid')
-    )
-  ;
-
-  r_object _object_reference.object;
+  r_object_v _object_reference._object_v;
   r_address record;
+
+  did_insert boolean := false;
 
   i smallint;
   sql text;
@@ -528,40 +785,76 @@ BEGIN
     ;
   END IF;
 
-  FOR i IN 1..10 LOOP
-    SELECT INTO r_object
-        *
-      FROM _object_reference.object o
-      WHERE (o.classid, o.objid, o.objsubid) = (c_classid, object__getsert.objid, object__getsert.objsubid)
-      FOR KEY SHARE
-    ;
-    IF FOUND THEN
-      IF object_group_id IS NOT NULL THEN
-        PERFORM object_reference.object_group__object__add(object_group_id, r_object.object_id);
-      END IF;
-      RETURN r_object;
+  -- Ensure the object record exists
+  SELECT INTO r_object_v
+      *
+    FROM _object_reference._object_v__for_update o
+    WHERE (o.object_type, o.object_names, o.object_args) = (_object_v__for_update.object_type, r_address.object_names, r_address.object_args)
+  ;
+  IF NOT FOUND THEN
+    FOR i IN 1..10 LOOP
+      did_insert := true;
+      INSERT INTO _object_reference.object(object_type, object_names, object_args)
+        VALUES(_object_v__for_update.object_type, r_address.object_names, r_address.object_args)
+        ON CONFLICT ON CONSTRAINT object__u_object_names__object_args DO NOTHING
+      ;
+      -- Still a small race condition here...
+      SELECT INTO r_object_v
+          *
+        FROM _object_reference._object_v__for_update o
+        WHERE (o.object_type, o.object_names, o.object_args) = (_object_v__for_update.object_type, r_address.object_names, r_address.object_args)
+      ;
+      EXIT WHEN FOUND;
+    END LOOP;
+    IF NOT FOUND THEN
+      RAISE 'fell out of loop!' USING HINT = 'This should never happen.';
     END IF;
+  END IF;
 
-    BEGIN
-      RAISE DEBUG E'%\n    USING  %, %, %, %, %, %'
-        , c_insert
-        , object_type, c_classid, objid, objsubid, r_address.object_names, r_address.object_args
-      ;
-      EXECUTE c_insert
-        INTO r_object
-        USING object_type, c_classid, objid, objsubid, r_address.object_names, r_address.object_args
-      ;
+  ASSERT r_object_v.names_ok, 'names do not match (should not be possible)' ;
 
-      IF object_group_id IS NOT NULL THEN
-        PERFORM object_reference.object_group__object__add(object_group_id, r_object.object_id);
+  IF object_group_id IS NOT NULL THEN
+    PERFORM object_reference.object_group__object__add(object_group_id, r_object_v.object_id);
+  END IF;
+
+  -- Handle _object_oid table
+  CASE
+    WHEN r_object_v.ids_ok THEN
+      RETURN r_object_v;
+
+    WHEN NOT r_object_v.ids_exist THEN
+      /*
+       * Just need to create IDs record.
+       */
+
+      /* 
+       * This shouldn't normally happen, but could occur if a restore didn't
+       * finish cleanly. We know it's safe to do this because names_ok is true.
+       */
+      IF NOT did_insert THEN
+        RAISE WARNING 'missing record in _object_reference._object_oid for object_id %', r_object_v.object_id
+          USING HINT = 'This indicates a restore did not finish cleanly.'
+        ;
       END IF;
-      RETURN r_object;
-    EXCEPTION WHEN unique_violation THEN
-      NULL;
-    END;
-  END LOOP;
+      r_object_v := _object_reference._object_oid__add(r_object_v.object_id, object_type, c_classid, objid, objsubid);
 
-  RAISE 'fell out of loop!' USING HINT = 'This should never happen.';
+    WHEN r_object_v.ids_exist THEN
+      RAISE 'ids are out of sync for object_id %', r_object_v.object_id
+        USING DETAIL = format(
+          E'_object_reference._object_v = %L,\n    arguments (%L, %s, %s, %s)'
+          , pg_catalog.row_to_json(r_object_v, true)
+          , object_type
+          , objid
+          , objsubid
+          , object_group_id
+        )
+        , HINT = 'this shoud not happen if event trigger "zzz_object_reference_end" is working'
+      ;
+    ELSE
+      RAISE 'unknown condition';
+  END CASE;
+
+  RETURN r_object_v;
 END
 $body$
   , 'Return details of a object record, creating a new record if one does not exist.'
@@ -724,7 +1017,7 @@ BEGIN
     RAISE 'secondary may not be specified for % objects', object_type;
   END IF;
 
-  RETURN (_object_reference.object__getsert( object_type, v_objid, v_subid, object_group_id )).object_id;
+  RETURN (_object_reference._object_v__for_update( object_type, v_objid, v_subid, object_group_id )).object_id;
 END
 $body$
   , 'Return a object_id for an object. Allows specifying a object group ID to add the object to. See also object__getsert().'
@@ -790,8 +1083,11 @@ BEGIN
       SET object_type  = (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid)).type::cat_tools.object_type
         , object_names = (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid)).object_names
         , object_args  = (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid)).object_args
-      WHERE (object_type::text, object_names, object_args) IS DISTINCT FROM
-        (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid))
+      FROM _object_reference._object_oid oo
+      WHERE 
+        oo.object_id = object.object_id
+        AND (object_type::text, object_names, object_args) IS DISTINCT FROM
+          (pg_catalog.pg_identify_object_as_address(classid, objid, objsubid))
       RETURNING *
   LOOP
     RAISE DEBUG 'modified_objects(): %', r;
@@ -806,35 +1102,55 @@ SELECT __object_reference.create_function(
   , 'event_trigger LANGUAGE plpgsql'
   , $body$
 DECLARE
-  r_object _object_reference.object;
+  r_object_v _object_reference._object_v;
   r record;
 BEGIN
   FOR r IN SELECT classid, objid, objsubid, object_type, schema_name, object_identity FROM pg_catalog.pg_event_trigger_dropped_objects() LOOP
     RAISE DEBUG 'dropped_objects(): %', r;
   END LOOP;
+
   -- Multiple objects might have been affected
   -- Could potentially be done with a writable CTE
-  FOR r_object IN
-    SELECT object.*
+  FOR r_object_v IN
+    SELECT _object_v.*
       FROM pg_catalog.pg_event_trigger_dropped_objects() d
-        JOIN _object_reference.object USING( classid, objid ) -- Intentionally ignore objsubid
+        JOIN _object_reference._object_v USING( classid, objid ) -- Intentionally ignore objsubid
       WHERE
         /*
          * If an object that contains subobjects is being removed, we need to
-         * also remove all subobjects. Otherwise, only remove the appropriate
-         * suboject.
+         * also remove all subobjects. In this case, we know d.objsubid = 0
          */
-        d.objsubid = 0 -- Case 1 above (or object doesn't have subobjects, which is fine)
-        OR d.objsubid = object.objsubid
+        d.objsubid = 0
+
+        /*
+         * Otherwise, only remove the appropriate suboject.
+         */
+        OR d.objsubid = _object_v.objsubid
   LOOP
-    RAISE DEBUG 'deleting object %', r_object;
+    RAISE DEBUG 'deleting object %', r_object_v;
     -- TODO: trap FK violation error on groups and output something better
-    DELETE FROM _object_reference.object WHERE object_id = r_object.object_id;
+    DELETE FROM _object_reference.object WHERE object_id = r_object_v.object_id;
   END LOOP;
+
+  /*
+   * We know that a restore will never drop objects, so force _object_v to be
+   * correct at this point. We can't do this before we delete based on the drop
+   * though.
+   */
+  PERFORM object_reference.post_restore();
 END
 $body$
   , 'Event trigger function to drop object records when objects are removed.'
 );
+
+/*
+CREATE OR REPLACE FUNCTION snitch() RETURNS event_trigger AS $$
+BEGIN
+    RAISE WARNING 'snitch: % %', tg_event, tg_tag;
+END;
+$$ LANGUAGE plpgsql;
+CREATE EVENT TRIGGER snitch ON ddl_command_start EXECUTE PROCEDURE snitch();
+*/
 
 CREATE EVENT TRIGGER zzz__object_reference_drop
   ON sql_drop

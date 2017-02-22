@@ -16,7 +16,7 @@ SELECT lives_ok(
   , $$CREATE TEMP TABLE test_object AS SELECT object_reference.object__getsert('table', 'test_table') AS object_id;$$
 );
 SELECT is(
-  (SELECT regclass FROM _object_reference.object WHERE object_id = (SELECT object_id FROM test_object))
+  (SELECT regclass FROM _object_reference._object_v WHERE object_id = (SELECT object_id FROM test_object))
   , 'test_table'::regclass
   , 'Verify regclass field is correct'
 );

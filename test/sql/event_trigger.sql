@@ -25,16 +25,16 @@ SELECT plan(
 
 SELECT lives_ok(
   $$CREATE TEMP TABLE objects AS
-      SELECT * FROM _object_reference.object__getsert('schema', 'object_identity_temp_test_schema'::regnamespace, 0)
+      SELECT * FROM _object_reference._object_v__for_update('schema', 'object_identity_temp_test_schema'::regnamespace, 0)
       UNION ALL
-      SELECT * FROM _object_reference.object__getsert('table', 'test2'::regclass, 0)
+      SELECT * FROM _object_reference._object_v__for_update('table', 'test2'::regclass, 0)
       UNION ALL
-      SELECT * FROM _object_reference.object__getsert('table column', 'test2'::regclass, 1)
+      SELECT * FROM _object_reference._object_v__for_update('table column', 'test2'::regclass, 1)
   $$
   , 'Register schema-drop test objects'
 );
 SELECT lives_ok(
-  $$CREATE TEMP VIEW objects_view AS SELECT o.* FROM _object_reference.object o JOIN objects t USING(object_id)$$
+  $$CREATE TEMP VIEW objects_view AS SELECT o.* FROM _object_reference._object_v o JOIN objects t USING(object_id)$$
   , 'Create objects_view'
 );
 SELECT is(
@@ -48,8 +48,8 @@ SELECT is(
  * column_test
  */
 SELECT lives_ok(
-  $$CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 1)$$
-  , $$CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 1)$$
+  $$CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference._object_v__for_update('table column', 'table_under_test'::regclass, 1)$$
+  , $$CREATE TEMP TABLE column_test AS SELECT * FROM _object_reference._object_v__for_update('table column', 'table_under_test'::regclass, 1)$$
 );
 SELECT is(
   (SELECT count(*) FROM column_test)
@@ -57,7 +57,7 @@ SELECT is(
   , 'Exactly 1 test object record'
 );
 SELECT lives_ok(
-  $$CREATE TEMP VIEW column_test_view AS SELECT o.* FROM _object_reference.object o JOIN column_test t USING(object_id)$$
+  $$CREATE TEMP VIEW column_test_view AS SELECT o.* FROM _object_reference._object_v o JOIN column_test t USING(object_id)$$
   , 'Create column_test_view'
 );
 SELECT is(
@@ -69,8 +69,8 @@ SELECT is(
 -- s/column_test/column_filler/g
 -- Change 1 to 2 in getsert
 SELECT lives_ok(
-  $$CREATE TEMP TABLE column_filler AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 2)$$
-  , $$CREATE TEMP TABLE column_filler AS SELECT * FROM _object_reference.object__getsert('table column', 'table_under_test'::regclass, 2)$$
+  $$CREATE TEMP TABLE column_filler AS SELECT * FROM _object_reference._object_v__for_update('table column', 'table_under_test'::regclass, 2)$$
+  , $$CREATE TEMP TABLE column_filler AS SELECT * FROM _object_reference._object_v__for_update('table column', 'table_under_test'::regclass, 2)$$
 );
 SELECT is(
   (SELECT count(*) FROM column_filler)
@@ -78,7 +78,7 @@ SELECT is(
   , 'Exactly 1 test object record'
 );
 SELECT lives_ok(
-  $$CREATE TEMP VIEW column_filler_view AS SELECT o.* FROM _object_reference.object o JOIN column_filler t USING(object_id)$$
+  $$CREATE TEMP VIEW column_filler_view AS SELECT o.* FROM _object_reference._object_v o JOIN column_filler t USING(object_id)$$
   , 'Create column_filler_view'
 );
 SELECT is(
@@ -91,8 +91,8 @@ SELECT is(
  * table_test
  */
 SELECT lives_ok(
-  $$CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference.object__getsert('table', 'table_under_test'::regclass, 0)$$
-  , $$CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference.object__getsert('table', 'table_under_test'::regclass, 0)$$
+  $$CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference._object_v__for_update('table', 'table_under_test'::regclass, 0)$$
+  , $$CREATE TEMP TABLE table_test AS SELECT * FROM _object_reference._object_v__for_update('table', 'table_under_test'::regclass, 0)$$
 );
 SELECT is(
   (SELECT count(*) FROM table_test)
@@ -100,7 +100,7 @@ SELECT is(
   , 'Exactly 1 test object record'
 );
 SELECT lives_ok(
-  $$CREATE TEMP VIEW table_test_view AS SELECT o.* FROM _object_reference.object o JOIN table_test t USING(object_id)$$
+  $$CREATE TEMP VIEW table_test_view AS SELECT o.* FROM _object_reference._object_v o JOIN table_test t USING(object_id)$$
   , 'Create table_test_view'
 );
 SELECT is(
