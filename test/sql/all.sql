@@ -3,7 +3,7 @@
 \i test/load.sql
 
 /*
- * SEE ALSO other/load_all.sql!
+ * SEE ALSO dump/load_all.sql and dump/verify.sql!
  */
 
 CREATE SCHEMA test_support;

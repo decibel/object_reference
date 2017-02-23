@@ -5,7 +5,7 @@
 SELECT plan(
   0
 
-  + 1
+  + 1 -- equality
 );
 
 -- TODO: load some damn data first

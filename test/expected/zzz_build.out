@@ -7,7 +7,8 @@ psql:test/temp_load.not_sql:166: WARNING:  I promise you will be sorry if you tr
 
 
 
-psql:test/temp_load.not_sql:480: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+
+psql:test/temp_load.not_sql:489: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
 
 
 
@@ -17,9 +18,9 @@ psql:test/temp_load.not_sql:480: WARNING:  I promise you will be sorry if you tr
 
 
 
-psql:test/temp_load.not_sql:588: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+psql:test/temp_load.not_sql:596: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
 
-psql:test/temp_load.not_sql:595: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+psql:test/temp_load.not_sql:603: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
 
 
 

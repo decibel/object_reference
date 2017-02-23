@@ -333,9 +333,9 @@ BEGIN
   IF object_type IS NULL THEN
     -- Should definitely exist
     SELECT INTO STRICT object_type, classid, objid, objsubid
-        object_type, classid, objid, objsubid
+        o.object_type, a.classid, a.objid, a.subobjid
       FROM _object_reference.object o
-        , pg_catalog.pg_get_object_address(o.object_type::text, o.object_names, o.object_args)
+        , pg_catalog.pg_get_object_address(o.object_type::text, o.object_names, o.object_args) a
       WHERE o.object_id = _object_oid__add.object_id
     ;
   END IF;
@@ -477,9 +477,17 @@ SELECT __object_reference.create_function(
 );
 
 
-CREATE TABLE _object_reference._sentry AS SELECT 1 AS sentry;
-SELECT __object_reference.safe_dump('_object_reference._sentry');
-CREATE MATERIALIZED VIEW _object_reference._sentry_mv AS SELECT * FROM _object_reference._sentry;
+SELECT __object_reference.create_function(
+  '_object_reference._repair'
+  , ''
+  , 'bigint SECURITY DEFINER LANGUAGE sql'
+  , 'SELECT count(*) AS objects FROM _object_reference.object, _object_reference._object_oid__add(object_id)'
+  , 'Ensures all object references are correct after a restore.'
+  , 'object_reference__usage'
+);
+
+CREATE MATERIALIZED VIEW _object_reference._sentry_mv AS SELECT _object_reference._repair();
+SELECT __object_reference.safe_dump('_object_reference._sentry_mv');
 
 /*
  * Unsupported object types
