@@ -1,5 +1,6 @@
 # Temporary test files
 test/temp_load.not_sql
+test/dump/*.log
 
 # Editor files
 .*.swp

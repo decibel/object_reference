@@ -4,6 +4,11 @@ testdeps: $(wildcard test/*.sql test/helpers/*.sql) # Be careful not to include 
 
 install: cat_tools count_nulls
 
+test: dump_test
+extra_clean += $(wildcard test/dump/*.log)
+dump_test: test/dump/run.sh test/helpers/object_table.sql $(wildcard test/dump/*.sql)
+	$< -f # Force drop of databases if they exist
+
 .PHONY: cat_tools
 cat_tools: $(DESTDIR)$(datadir)/extension/cat_tools.control
 
