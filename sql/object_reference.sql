@@ -501,7 +501,7 @@ SELECT cat_tools.objects__shared()
   || cat_tools.objects__address_unsupported()
   || '{event trigger}'
 $body$
-  , 'Get details about the specified object group'
+  , 'Returns array of object types that are not supported.'
   , 'object_reference__usage'
 );
 SELECT __object_reference.create_function(
@@ -511,7 +511,7 @@ SELECT __object_reference.create_function(
   , $body$
 SELECT * FROM unnest(object_reference.unsupported())
 $body$
-  , 'Get details about the specified object group'
+  , 'Returns set of object types that are not supported.'
   , 'object_reference__usage'
 );
 SELECT __object_reference.create_function(
@@ -551,7 +551,7 @@ text search template, text search configuration, foreign-data wrapper, server,
 user mapping, default acl, transform, access method, extension, policy
 }'::cat_tools.object_type[]
 $body$
-  , 'Get details about the specified object group'
+  , 'Returns array of object types that have not been tested.'
   , 'object_reference__usage'
 );
 SELECT __object_reference.create_function(
@@ -561,7 +561,7 @@ SELECT __object_reference.create_function(
   , $body$
 SELECT * FROM unnest(object_reference.untested())
 $body$
-  , 'Get details about the specified object group'
+  , 'Returns set of object types that have not been tested.'
   , 'object_reference__usage'
 );
 SELECT __object_reference.create_function(
@@ -1056,7 +1056,191 @@ $body$
 /*
  * ddl_capture
  */
+SELECT __object_reference.create_function(
+  'object_reference.capture__get_all'
+  , $args$
+  OUT capture_level int
+  , OUT object_group_id _object_reference.object_group.object_group_id%TYPE
+  , OUT object_group_name _object_reference.object_group.object_group_name%TYPE
+$args$
+  , 'SETOF RECORD LANGUAGE plpgsql'
+  , $body$
+DECLARE
+BEGIN
+  RETURN QUERY SELECT c.capture_level, c.object_group_id, og.object_group_name
+    FROM pg_temp.__object_reference__ddl_capture c
+    JOIN _object_reference.object_group og USING(object_group_id)
+    ORDER BY capture_level DESC
+  ;
+EXCEPTION WHEN undefined_table THEN
+  RETURN;
+END
+$body$
+  , 'Return stack of object groups that are being captured to.'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.capture__get_current'
+  , $args$
+  OUT capture_level int
+  , OUT object_group_id _object_reference.object_group.object_group_id%TYPE
+  , OUT object_group_name _object_reference.object_group.object_group_name%TYPE
+$args$
+  , 'RECORD LANGUAGE sql'
+  , $body$
+SELECT * FROM object_reference.capture__get_all() LIMIT 1
+$body$
+  , 'Return object group that object creation currently is being captured to.'
+  , 'object_reference__usage'
+);
 
+SELECT __object_reference.create_function(
+  'object_reference.capture__start'
+  , $args$
+  object_group_id _object_reference.object_group.object_group_id%TYPE
+$args$
+  , 'int SECURITY DEFINER LANGUAGE plpgsql'
+  , $body$
+DECLARE
+  c_next_level int := coalesce(capture_level, 0) + 1 FROM object_reference.capture__get_current();
+BEGIN
+  -- Ensure object group exists
+  PERFORM object_reference.object_group__get(object_group_id);
+
+  INSERT INTO pg_temp.__object_reference__ddl_capture 
+    SELECT c_next_level, capture__start.object_group_id
+  ;
+  RETURN c_next_level;
+
+EXCEPTION WHEN undefined_table THEN
+  CREATE TEMP TABLE __object_reference__ddl_capture AS
+    SELECT c_next_level, capture__start.object_group_id
+  ;
+  CREATE TEMP TABLE __object_reference__ddl_capture(
+    capture_level int PRIMARY KEY
+    , object_group_id INT NOT NULL REFERENCES _object_reference.object_group 
+  );
+  -- This breaks if run directly under plpgsql
+  EXECUTE $code$
+  CREATE CONSTRAINT TRIGGER verify_capture_stop AFTER INSERT
+    ON pg_temp.__object_reference__ddl_capture 
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH STATEMENT EXECUTE PROCEDURE _object_reference._tg_capture_safety()
+  $code$;
+
+  INSERT INTO pg_temp.__object_reference__ddl_capture 
+    SELECT c_next_level, capture__start.object_group_id
+  ;
+  RETURN c_next_level;
+END
+$body$
+  , 'Begin capturing newly created objects to <object_group_id>. Returns current capture level.'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.capture__start'
+  , $args$
+  object_group_name _object_reference.object_group.object_group_name%TYPE
+$args$
+  , 'int LANGUAGE sql'
+  , $body$
+SELECT object_reference.capture__start(
+  (object_reference.object_group__get(object_group_name)).object_group_id
+);
+$body$
+  , 'Begin capturing newly created objects to <object_group_id>. Returns current capture level.'
+  , 'object_reference__usage'
+);
+
+SELECT __object_reference.create_function(
+  'object_reference.capture__stop'
+  , $args$
+  object_group_id _object_reference.object_group.object_group_id%TYPE
+$args$
+  , 'void SECURITY DEFINER LANGUAGE plpgsql'
+  , $body$
+DECLARE
+  r record;
+BEGIN
+  r := * FROM object_reference.capture__get_current();
+  IF r.capture_level IS NULL THEN
+    RAISE 'not capturing DDL'
+      USING HINT = 'Did you forget to call object_referenc.capture__start()?'
+    ;
+  END IF;
+
+  IF r.object_group_id <> coalesce(object_group_id) THEN
+    RAISE 'object_group mismatch'
+      USING DETAIL = format(
+        'currently capturing for group %L (id %s), expecting group %L (id %s)'
+        , r.object_group_name
+        , r.object_group_id
+        -- This will error if the group doesn't exist
+        , (object_reference.object_group__get(object_group_id)).object_group_name
+        , capture__stop.object_group_id
+      )
+    ;
+  END IF;
+
+  DELETE FROM pg_temp.__object_reference__ddl_capture WHERE capture_level = r.capture_level;
+EXCEPTION WHEN undefined_table THEN
+  RAISE 'not capturing DDL'
+    USING HINT = 'Did you forget to call object_referenc.capture__start()?'
+  ;
+END
+$body$
+  , 'Begin capturing newly created objects to <object_group_id>. Returns current capture level.'
+  , 'object_reference__usage'
+);
+SELECT __object_reference.create_function(
+  'object_reference.capture__stop'
+  , $args$
+  object_group_name _object_reference.object_group.object_group_name%TYPE
+$args$
+  , 'void LANGUAGE sql'
+  , $body$
+SELECT object_reference.capture__stop(
+  (object_reference.object_group__get(object_group_name)).object_group_id
+)
+$body$
+  , 'Begin capturing newly created objects to <object_group_id>. Returns current capture level.'
+  , 'object_reference__usage'
+);
+
+SELECT __object_reference.create_function(
+  '_object_reference._tg_capture_safety'
+  , ''
+  , 'trigger LANGUAGE plpgsql'
+  , $body$
+BEGIN
+  IF EXISTS(SELECT 1 FROM pg_temp.__object_reference__ddl_capture) THEN
+    RAISE 'attempted commit while still capturing DDL'
+      USING HINT = 'Did you not start a transaction? Did you forget to call object_reference.capture__stop()?'
+    ;
+  END IF;
+END
+$body$
+  , 'Trigger function to ensure capture__stop() is called an appropriate number of times.'
+);
+SELECT __object_reference.create_function(
+  '_object_reference._etg_capture'
+  , ''
+  , 'event_trigger LANGUAGE plpgsql'
+  , $body$
+DECLARE
+  c_group_id CONSTANT int := object_group_id FROM object_reference.capture__get_current();
+BEGIN
+  IF c_group_id IS NOT NULL THEN -- Would be NULL if table is empty
+    PERFORM _object_reference._object_v__for_update(object_type, classid, objid, objsubid, c_group_id)
+      FROM pg_catalog.pg_event_trigger_ddl_commands()
+      WHERE command_tag LIKE 'CREATE%'
+        AND NOT object_reference.unsupported(object_type)
+    ;
+  END IF;
+END
+$body$
+  , 'Event trigger function to capture newly created objects in an object group.'
+);
 
 
 SELECT __object_reference.create_function(
@@ -1166,11 +1350,17 @@ CREATE EVENT TRIGGER zzz__object_reference_drop
   --WHEN tag IN ( 'ALTER TABLE', 'DROP TABLE' )
   EXECUTE PROCEDURE _object_reference._etg_drop()
 ;
-CREATE EVENT TRIGGER zzz_object_reference_end
+CREATE EVENT TRIGGER zzz_object_reference__fix_identity
   ON ddl_command_end
   -- For debugging
   --WHEN tag IN ( 'ALTER TABLE', 'DROP TABLE' )
   EXECUTE PROCEDURE _object_reference._etg_fix_identity()
+;
+CREATE EVENT TRIGGER zzz_object_reference_capture
+  ON ddl_command_end
+  -- For debugging
+  --WHEN tag IN ( 'ALTER TABLE', 'DROP TABLE' )
+  EXECUTE PROCEDURE _object_reference._etg_capture()
 ;
 
 /*
