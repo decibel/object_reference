@@ -1126,7 +1126,7 @@ SELECT __object_reference.create_function(
   , object_group_name _object_reference.object_group.object_group_name%TYPE DEFAULT NULL
 $args$
   , 'int LANGUAGE sql'
-  , $$SELECT object_reference.object__getsert( $1::cat_tools.object_type, $2, $3, $4 )$$
+  , $$SELECT object_reference.object__getsert( lower($1)::cat_tools.object_type, $2, $3, $4 )$$
   , 'Return a object_id for an object. Allows specifying a object group name to add the object to. See also object__getsert_w_group_id().'
   , 'object_reference__usage'
 );
