@@ -40,6 +40,14 @@ EXCEPTION WHEN duplicate_object THEN
 END
 $$;
 
+DO $$
+BEGIN
+  CREATE ROLE object_reference__dependency NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN
+  NULL;
+END
+$$;
+
 /*
  * NOTE: All pg_temp objects must be dropped at the end of the script!
  * Otherwise the eventual DROP CASCADE of pg_temp when the session ends will
@@ -150,6 +158,20 @@ $body$;
 -- Schema already created via CREATE EXTENSION
 GRANT USAGE ON SCHEMA object_reference TO object_reference__usage;
 CREATE SCHEMA _object_reference;
+GRANT USAGE ON SCHEMA _object_reference TO object_reference__dependency;
+
+SELECT __object_reference.create_function(
+  '_object_reference.exec'
+  , 'sql text'
+  , 'void LANGUAGE plpgsql'
+  , $body$
+BEGIN
+  RAISE DEBUG 'sql = %', sql;
+  EXECUTE sql;
+END
+$body$
+  , 'Execute arbitrary SQL with logging.'
+);
 
 CREATE TABLE _object_reference.object(
   object_id       serial                  PRIMARY KEY
@@ -165,6 +187,7 @@ CREATE TABLE _object_reference.object(
     */
 );
 SELECT __object_reference.safe_dump('_object_reference.object');
+GRANT REFERENCES ON _object_reference.object TO object_reference__dependency;
 
 CREATE TABLE _object_reference._object_oid(
   object_id       int                     PRIMARY KEY REFERENCES _object_reference.object ON DELETE CASCADE ON UPDATE CASCADE
@@ -753,6 +776,48 @@ $body$
 
 
 /*
+ * REFERENCES
+ */
+
+SELECT __object_reference.create_function(
+  'object_reference.object_group__dependency__add'
+  , $args$
+  table_name text
+  , field_name name
+$args$
+  , 'void LANGUAGE plpgsql'
+  , $body$
+DECLARE
+  -- Do this to sanitize input
+  o_table CONSTANT regclass := table_name;
+BEGIN
+  PERFORM _object_reference.exec( format( 'ALTER TABLE %s ADD FOREIGN KEY( %I ) REFERENCES _object_reference.object_group', table_name, field_name ) );
+END
+$body$
+  , 'Add a foreign key from <table_name>.<field_name> to the object_group table.'
+  , 'object_reference__dependency'
+);
+-- s/object_group/object/
+SELECT __object_reference.create_function(
+  'object_reference.object__dependency__add'
+  , $args$
+  table_name text
+  , field_name name
+$args$
+  , 'void LANGUAGE plpgsql'
+  , $body$
+DECLARE
+  -- Do this to sanitize input
+  o_table CONSTANT regclass := table_name;
+BEGIN
+  PERFORM _object_reference.exec( format( 'ALTER TABLE %s ADD FOREIGN KEY( %I ) REFERENCES _object_reference.object', table_name, field_name ) );
+END
+$body$
+  , 'Add a foreign key from <table_name>.<field_name> to the object table.'
+  , 'object_reference__dependency'
+);
+
+/*
  * OBJECT GETSERT
  */
 SELECT __object_reference.create_function(
@@ -1225,7 +1290,7 @@ $body$
 SELECT __object_reference.create_function(
   '_object_reference._etg_capture'
   , ''
-  , 'event_trigger LANGUAGE plpgsql'
+  , 'event_trigger SECURITY DEFINER LANGUAGE plpgsql'
   , $body$
 DECLARE
   c_group_id CONSTANT int := object_group_id FROM object_reference.capture__get_current();
@@ -1246,7 +1311,7 @@ $body$
 SELECT __object_reference.create_function(
   '_object_reference._etg_fix_identity'
   , ''
-  , 'event_trigger LANGUAGE plpgsql'
+  , 'event_trigger SECURITY DEFINER LANGUAGE plpgsql'
   , $body$
 DECLARE
   r_ddl record;

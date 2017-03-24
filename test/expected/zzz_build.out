@@ -1,14 +1,15 @@
 \set ECHO none
 This extension must be loaded via CREATE EXTENSION object_reference;
 You really, REALLY do NOT want to try and load this via psql!!!
-psql:test/temp_load.not_sql:166: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+
+psql:test/temp_load.not_sql:188: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
 
 
 
 
 
 
-psql:test/temp_load.not_sql:489: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+psql:test/temp_load.not_sql:512: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
 
 
 
@@ -18,9 +19,11 @@ psql:test/temp_load.not_sql:489: WARNING:  I promise you will be sorry if you tr
 
 
 
-psql:test/temp_load.not_sql:596: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+psql:test/temp_load.not_sql:619: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
 
-psql:test/temp_load.not_sql:603: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+psql:test/temp_load.not_sql:626: WARNING:  I promise you will be sorry if you try to use this as anything other than an extension!
+
+
 
 
 
