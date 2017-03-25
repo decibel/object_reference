@@ -940,11 +940,13 @@ SELECT __object_reference.create_function(
   , object_name text
   , secondary text DEFAULT NULL
   , object_group_id int DEFAULT NULL
+  , loose boolean DEFAULT false
 $args$
   , 'int LANGUAGE plpgsql'
   , $body$
 DECLARE
   c_catalog CONSTANT regclass := cat_tools.object__catalog(object_type);
+  c_loose CONSTANT boolean := coalesce(loose, false);
 
   v_objid oid;
   v_subid int := 0;
@@ -960,14 +962,28 @@ BEGIN
      * can have that regprocedure doesn't support.
      */
     -- TODO: allow this to parse object_name directly
-    v_objid := cat_tools.regprocedure(object_name, secondary);
+    BEGIN
+      v_objid := cat_tools.regprocedure(object_name, secondary);
+    EXCEPTION WHEN undefined_function THEN
+      IF c_loose THEN
+        RETURN NULL;
+      END IF;
+      RAISE;
+    END;
     secondary = NULL;
 
   -- Columns
   WHEN 'pg_catalog.pg_attribute'::regclass THEN
     v_objid := object_name::regclass;
-    -- Will throw error if column isn't valid
-    v_subid := (cat_tools.pg_attribute__get(v_objid, secondary)).attnum;
+    BEGIN
+      -- Will throw error if column isn't valid
+      v_subid := (cat_tools.pg_attribute__get(v_objid, secondary)).attnum;
+    EXCEPTION WHEN undefined_column THEN
+      IF c_loose THEN
+        RETURN NULL;
+      END IF;
+      RAISE;
+    END;
     secondary = NULL;
 
   -- Defaults
@@ -981,6 +997,9 @@ BEGIN
           AND adnum = (cat_tools.pg_attribute__get(object_name::regclass, secondary)).attnum
       ;
     EXCEPTION WHEN no_data_found THEN
+      IF c_loose THEN
+        RETURN NULL;
+      END IF;
       RAISE 'default value for %.% does not exist', object_name::regclass, secondary
         USING ERRCODE = 'undefined_object'
       ;
@@ -997,6 +1016,9 @@ BEGIN
           AND tgname = secondary
       ;
     EXCEPTION WHEN no_data_found THEN
+      IF c_loose THEN
+        RETURN NULL;
+      END IF;
       RAISE 'trigger "%" for table "%" does not exist', secondary, object_name::regclass
         USING ERRCODE = 'undefined_object'
       ;
@@ -1028,6 +1050,9 @@ BEGIN
           ;
       EXCEPTION WHEN no_data_found THEN
         -- At this point regclass or regtype should have thrown an error if the parent object doesn't exist
+        IF c_loose THEN
+          RETURN NULL;
+        END IF;
         RAISE 'constraint "%" does not exist', secondary
           USING ERRCODE = 'undefined_object'
         ;
@@ -1045,9 +1070,15 @@ BEGIN
           AND casttarget = secondary::regtype
         ;
     EXCEPTION WHEN no_data_found THEN
+      IF c_loose THEN
+        RETURN NULL;
+      END IF;
       RAISE 'cast from "%" to "%" does not exist', object_name, secondary
         USING ERRCODE = 'undefined_object'
       ;
+      IF c_loose THEN
+        RETURN NULL;
+      END IF;
     END;
     secondary = NULL;
 
@@ -1082,7 +1113,16 @@ BEGIN
         );
       END IF;
       RAISE DEBUG 'looking up % % via %', object_type, object_name, sql;
-      EXECUTE sql INTO STRICT v_objid;
+      BEGIN
+        EXECUTE sql INTO STRICT v_objid;
+      EXCEPTION WHEN no_data_found THEN
+        IF c_loose THEN
+          RETURN NULL;
+        END IF;
+        RAISE '% "%" does not exist', object_type, object_name
+          USING ERRCODE = 'undefined_object'
+        ;
+      END;
     END;
   END CASE;
 
@@ -1104,6 +1144,7 @@ SELECT __object_reference.create_function(
   , object_name text
   , secondary text DEFAULT NULL
   , object_group_name _object_reference.object_group.object_group_name%TYPE DEFAULT NULL
+  , loose boolean DEFAULT false
 $args$
   , 'int LANGUAGE sql'
   , $body$
@@ -1112,6 +1153,7 @@ SELECT object_reference.object__getsert_w_group_id(
   , CASE WHEN object_group_name IS NOT NULL THEN
       (object_reference.object_group__get($4)).object_group_id
     END
+  , $5
 )
 $body$
   , 'Return a object_id for an object. Allows specifying a object group name to add the object to. See also object__getsert_w_group_id().'
@@ -1124,9 +1166,10 @@ SELECT __object_reference.create_function(
   , object_name text
   , secondary text DEFAULT NULL
   , object_group_name _object_reference.object_group.object_group_name%TYPE DEFAULT NULL
+  , loose boolean DEFAULT false
 $args$
   , 'int LANGUAGE sql'
-  , $$SELECT object_reference.object__getsert( lower($1)::cat_tools.object_type, $2, $3, $4 )$$
+  , $$SELECT object_reference.object__getsert( lower($1)::cat_tools.object_type, $2, $3, $4, $5 )$$
   , 'Return a object_id for an object. Allows specifying a object group name to add the object to. See also object__getsert_w_group_id().'
   , 'object_reference__usage'
 );
