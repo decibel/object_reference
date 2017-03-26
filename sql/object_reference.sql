@@ -698,28 +698,41 @@ SELECT __object_reference.create_function(
   'object_reference.object_group__remove'
   , $args$
   object_group_id _object_reference.object_group.object_group_id%TYPE
+  , force boolean DEFAULT false
 $args$
-  , 'void LANGUAGE sql'
+  , 'void LANGUAGE plpgsql'
   , $body$
-DELETE FROM _object_reference.object_group
+DECLARE
   -- This is to ensure group exists
-  WHERE object_group_id = (object_reference.object_group__get($1)).object_group_id
+  c_object_group_id CONSTANT int := (object_reference.object_group__get($1)).object_group_id;
+BEGIN
+  IF force IS TRUE THEN
+    DELETE FROM _object_reference.object_group__object
+      WHERE object_group__object.object_group_id = c_object_group_id
+    ;
+  END IF;
+  DELETE FROM _object_reference.object_group
+    WHERE object_group.object_group_id = c_object_group_id
+  ;
+END
 $body$
-  , 'Remove a object group.'
+  , 'Remove a object group. If force is true, remove group even if it still references objects.'
   , 'object_reference__usage'
 );
 SELECT __object_reference.create_function(
   'object_reference.object_group__remove'
   , $args$
   object_group_name _object_reference.object_group.object_group_name%TYPE
+  , force boolean DEFAULT false
 $args$
   , 'void LANGUAGE sql'
   , $body$
-DELETE FROM _object_reference.object_group
-  -- This is to ensure group exists
-  WHERE object_group_name = (object_reference.object_group__get($1)).object_group_name
+SELECT object_reference.object_group__remove(
+  (object_reference.object_group__get($1)).object_group_id
+  , $2
+);
 $body$
-  , 'Remove a object group.'
+  , 'Remove a object group. If force is true, remove group even if it still references objects.'
   , 'object_reference__usage'
 );
 
@@ -827,6 +840,7 @@ SELECT __object_reference.create_function(
   , objid _object_reference._object_oid.objid%TYPE
   , objsubid _object_reference._object_oid.objsubid%TYPE
   , object_group_id int DEFAULT NULL
+  , class_id regclass DEFAULT NULL
 $args$
   , '_object_reference._object_v LANGUAGE plpgsql'
   , $body$
@@ -841,6 +855,11 @@ DECLARE
   i smallint;
   sql text;
 BEGIN
+  ASSERT class_id IS NULL OR class_id = c_classid, format(
+    'cat_tools.object__address_classid(object_type) %L <> class_id %L'
+    , c_classid
+    , class_id
+  );
   IF object_reference.unsupported(object_type) THEN
     RAISE 'object_type % is not supported', object_type;
   END IF;
@@ -1234,19 +1253,22 @@ BEGIN
   RETURN c_next_level;
 
 EXCEPTION WHEN undefined_table THEN
+  /*
   CREATE TEMP TABLE __object_reference__ddl_capture AS
     SELECT c_next_level, capture__start.object_group_id
   ;
+  */
   CREATE TEMP TABLE __object_reference__ddl_capture(
     capture_level int PRIMARY KEY
-    , object_group_id INT NOT NULL REFERENCES _object_reference.object_group 
+    , object_group_id INT NOT NULL -- temp tables can't reference permanent ones
   );
   -- This breaks if run directly under plpgsql
   EXECUTE $code$
   CREATE CONSTRAINT TRIGGER verify_capture_stop AFTER INSERT
     ON pg_temp.__object_reference__ddl_capture 
     DEFERRABLE INITIALLY DEFERRED
-    FOR EACH STATEMENT EXECUTE PROCEDURE _object_reference._tg_capture_safety()
+    FOR EACH ROW -- CONSTRAINT triggers must be per-ROW
+    EXECUTE PROCEDURE _object_reference._tg_capture_safety()
   $code$;
 
   INSERT INTO pg_temp.__object_reference__ddl_capture 
@@ -1283,10 +1305,14 @@ $args$
 DECLARE
   r record;
 BEGIN
-  r := * FROM object_reference.capture__get_current();
+  SELECT INTO STRICT r
+      *
+    FROM object_reference.capture__get_current()
+  ;
   IF r.capture_level IS NULL THEN
     RAISE 'not capturing DDL'
       USING HINT = 'Did you forget to call object_referenc.capture__start()?'
+      -- TODO: use better status code
     ;
   END IF;
 
@@ -1350,13 +1376,39 @@ SELECT __object_reference.create_function(
   , $body$
 DECLARE
   c_group_id CONSTANT int := object_group_id FROM object_reference.capture__get_current();
+      r record;
 BEGIN
+
   IF c_group_id IS NOT NULL THEN -- Would be NULL if table is empty
-    PERFORM _object_reference._object_v__for_update(object_type, classid, objid, objsubid, c_group_id)
+    RAISE DEBUG E'\n\n*** START ***';
+    BEGIN
+      FOR r IN
+        SELECT classid, objid, objsubid, command_tag, object_type, schema_name, object_identity, in_extension
+            -- Have to manually exclude command field :/
+          FROM pg_catalog.pg_event_trigger_ddl_commands()
+      LOOP
+        RAISE DEBUG 'ddl: %', row_to_json(r);
+      END LOOP;
+    END;
+
+    FOR r IN SELECT 
+    _object_reference._object_v__for_update(
+          object_type::cat_tools.object_type
+          , objid, objsubid
+          , c_group_id
+          , classid
+        )
+        , classid, objid, objsubid, command_tag, object_type, schema_name, object_identity, in_extension
       FROM pg_catalog.pg_event_trigger_ddl_commands()
-      WHERE command_tag LIKE 'CREATE%'
-        AND NOT object_reference.unsupported(object_type)
-    ;
+      WHERE command_tag ~ '^CREATE' --'^(ALTER|CREATE)'
+        AND NOT object_reference.unsupported(object_type::cat_tools.object_type)
+        AND (schema_name IS NULL
+            OR schema_name NOT LIKE 'pg_temp%' -- pg_my_temp_schema() doesn't seem worth it...
+          )
+    LOOP
+      RAISE DEBUG 'registered %', row_to_json(r);
+    END LOOP;
+    RAISE DEBUG E'*** END ***\n\n';
   END IF;
 END
 $body$

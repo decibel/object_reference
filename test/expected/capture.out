@@ -1,0 +1,72 @@
+\set ECHO none
+1..69
+ok 1 - prereq: CREATE DOMAIN "test domain" int
+ok 2 - prereq: CREATE FUNCTION tg_null() RETURNS trigger LANGUAGE plpgsql AS $body$BEGIN RETURN NEW; END$body$
+ok 3 - prereq: CREATE TYPE "test type"
+ok 4 - prereq: CREATE FUNCTION "test type in"(cstring) RETURNS "test type" LANGUAGE 'internal' IMMUTABLE AS 'int2in'
+ok 5 - prereq: CREATE FUNCTION "test type out"("test type") RETURNS cstring LANGUAGE 'internal' IMMUTABLE AS 'int2in'
+ok 6 - Verify capture__stop() without capture__start errors.
+ok 7 - Create "TEMP object capture test group 1"
+ok 8 - Create "TEMP object capture test group 2"
+ok 9 - Start capture for group 1
+ok 10 - No objects exist for either test group
+ok 11 - CREATE table "test table" ("test column" int)
+ok 12 - CREATE index "test table test index" ON "test table"("test column")
+ok 13 - CREATE sequence "test sequence"
+ok 14 - CREATE view "test view" AS SELECT * FROM "test table"
+ok 15 - CREATE materialized view "test materialized view" AS SELECT * FROM "test table"
+ok 16 - ALTER TABLE "test table" ADD COLUMN "second test column" int
+ok 17 - ALTER DOMAIN "test domain" ADD CONSTRAINT "test domain constraint" CHECK(true)
+ok 18 - ALTER TABLE "test table" ADD CONSTRAINT "test table constraint" CHECK(true)
+ok 19 - CREATE FUNCTION "test function"("test column" int DEFAULT 0) RETURNS int LANGUAGE sql AS 'SELECT $1'
+ok 20 - CREATE TYPE "test type" (INPUT = "test type in", OUTPUT = "test type out")
+ok 21 - CREATE CAST ("test type" AS int4) WITH INOUT
+ok 22 - ALTER TABLE "test table" ALTER "test column" SET DEFAULT 0
+ok 23 - CREATE TRIGGER "test trigger" AFTER INSERT ON "test table" FOR EACH ROW EXECUTE PROCEDURE tg_null()
+ok 24 - Register object_group_ids table
+ok 25 - Verify ogi__object_id has exactly one row.
+ok 26 - Verify object_id for object_group_ids table is NOT in any groups.
+ok 27 - Correct # of objects captured to group.
+ok 28 - Register: INSERT INTO obj_ref VALUES(1, object_reference.object__getsert('table', '"test table"', NULL))
+ok 29 - Register: INSERT INTO obj_ref VALUES(2, object_reference.object__getsert('index', '"test table test index"', NULL))
+ok 30 - Register: INSERT INTO obj_ref VALUES(3, object_reference.object__getsert('sequence', '"test sequence"', NULL))
+ok 31 - Register: INSERT INTO obj_ref VALUES(4, object_reference.object__getsert('view', '"test view"', NULL))
+ok 32 - Register: INSERT INTO obj_ref VALUES(5, object_reference.object__getsert('materialized view', '"test materialized view"', NULL))
+ok 33 - Register: INSERT INTO obj_ref VALUES(9, object_reference.object__getsert('function', '"test function"', '"test column" int DEFAULT 0'))
+ok 34 - Register: INSERT INTO obj_ref VALUES(10, object_reference.object__getsert('type', '"test type"', NULL))
+ok 35 - Register: INSERT INTO obj_ref VALUES(11, object_reference.object__getsert('cast', '"test type"', 'integer'))
+ok 36 - Register: INSERT INTO obj_ref VALUES(13, object_reference.object__getsert('trigger', '"test table"', 'test trigger'))
+ok 37 - Verify captured object IDs match
+ok 38 - Start capture for group 2
+ok 39 - Verify captured objects for level 2
+ok 40 - Verify group 1 objects have not changed.
+ok 41 - capture__stop() with invalid group errors
+ok 42 - Stop capture group 2
+ok 43 - Verify table "Capture 1" added to capture group 1
+ok 44 - Verify captured objects for level 2 are unchanged
+ok 45 - Stop capture group 1
+ok 46 - Verify capture group 1 is still correct
+ok 47 - Verify capture group 2 is still correct
+ok 48 - Remove object group 1
+ok 49 - Remove object group 2
+ok 50 - Drop should fail while reference exists
+ok 51 - DROP TRIGGER "test trigger" ON "test table"
+ok 52 - Drop should fail while reference exists
+ok 53 - DROP CAST ("test type" AS int4)
+ok 54 - Drop should fail while reference exists
+ok 55 - DROP TYPE "test type" CASCADE; -- Need to cascade due to functions
+ok 56 - Drop should fail while reference exists
+ok 57 - DROP FUNCTION "test function"(int)
+ok 58 - Drop should fail while reference exists
+ok 59 - DROP materialized view "test materialized view"
+ok 60 - Drop should fail while reference exists
+ok 61 - DROP view "test view"
+ok 62 - Drop should fail while reference exists
+ok 63 - DROP sequence "test sequence"
+ok 64 - Drop should fail while reference exists
+ok 65 - DROP index "test table test index"
+ok 66 - Drop should fail while reference exists
+ok 67 - DROP table "test table"
+ok 68 - object_group_ids still has correct record count
+ok 69 - No object references remain
+# TRANSACTION INTENTIONALLY LEFT OPEN!
