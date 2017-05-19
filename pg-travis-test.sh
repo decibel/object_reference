@@ -22,11 +22,13 @@ sudo apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-co
 sudo easy_install pgxnclient
 
 PGPORT=55435 
-export PGCLUSTER=test
+PGCLUSTER_NAME=test
+
+export PGCLUSTER=9.6/$PGCLUSTER_NAME
 env | grep PG
 which pg_dump
 
-sudo pg_createcluster --start $PGVERSION $PGCLUSTER -p $PGPORT -- -A trust
+sudo pg_createcluster --start $PGVERSION $PGCLUSTER_NAME -p $PGPORT -- -A trust
 
 # TODO: have base.mk support dynamic sudo
 sudo PGPORT=$PGPORT PGUSER=postgres PG_CONFIG=/usr/lib/postgresql/$PGVERSION/bin/pg_config make test
