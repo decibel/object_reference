@@ -1535,13 +1535,14 @@ SELECT __object_reference.create_function(
 DECLARE
   r record;
 BEGIN
-  FOR r IN SELECT classid, objid, objsubid, object_type, schema_name, object_identity FROM pg_catalog.pg_event_trigger_dropped_objects() LOOP
+  FOR r IN SELECT classid, objid, objsubid, object_type, schema_name, object_name, object_identity FROM pg_catalog.pg_event_trigger_dropped_objects() LOOP
     RAISE WARNING 'dropped_objects:
     classid: %
     objid: %
     objsubid: %
     object_type: %
     schema_name: %
+    object_name: %
     object_identity: %
     '
       -- :^r" s/\([^ ]\+\):.*/, r.\1/
@@ -1550,6 +1551,7 @@ BEGIN
       , r.objsubid
       , r.object_type
       , r.schema_name
+      , r.object_name
       , r.object_identity
     ;
   END LOOP;
