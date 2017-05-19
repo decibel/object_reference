@@ -1517,7 +1517,7 @@ SELECT __object_reference.create_function(
   , 'event_trigger LANGUAGE plpgsql'
   , $body$
 BEGIN
-    RAISE WARNING 'snitch: % %', tg_event, tg_tag;
+    RAISE WARNING 'etg_raise_start: % %', tg_event, tg_tag;
 END;
 $body$
   , $$Event trigger function to report on DDL activity. Example trigger:
