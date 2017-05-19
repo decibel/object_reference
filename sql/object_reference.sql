@@ -1512,23 +1512,23 @@ $body$
 );
 
 SELECT __object_reference.create_function(
-  '_object_reference.etg_raise_start'
+  '_object_reference.etg_raise__start'
   , ''
   , 'event_trigger LANGUAGE plpgsql'
   , $body$
 BEGIN
-    RAISE WARNING 'etg_raise_start: % %', tg_event, tg_tag;
+    RAISE WARNING 'etg_raise__start: % %', tg_event, tg_tag;
 END;
 $body$
   , $$Event trigger function to report on DDL activity. Example trigger:
 CREATE EVENT TRIGGER start
   ON ddl_command_start
   --WHEN tag IN ( 'ALTER TABLE', 'DROP TABLE' )
-  EXECUTE PROCEDURE _object_reference.etg_raise_start()
+  EXECUTE PROCEDURE _object_reference.etg_raise__start()
 ;
 $$);
 SELECT __object_reference.create_function(
-  '_object_reference.etg_raise_drop'
+  '_object_reference.etg_raise__drop'
   , ''
   , 'event_trigger LANGUAGE plpgsql'
   , $body$
@@ -1561,7 +1561,7 @@ $body$
 CREATE EVENT TRIGGER drop
   ON sql_drop
   --WHEN tag IN ( 'ALTER TABLE', 'DROP TABLE' )
-  EXECUTE PROCEDURE _object_reference.etg_raise_drop()
+  EXECUTE PROCEDURE _object_reference.etg_raise__drop()
 ;
 $$);
 
