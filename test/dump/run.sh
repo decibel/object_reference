@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+env | grep PG
+which pg_dump
+
 DIR=test/dump
 create_log=$DIR/create.log
 restore_log=$DIR/restore.log

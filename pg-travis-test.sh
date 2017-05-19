@@ -23,6 +23,9 @@ sudo easy_install pgxnclient
 
 PGPORT=55435 
 export PGCLUSTER=test
+env | grep PG
+which pg_dump
+
 sudo pg_createcluster --start $PGVERSION $PGCLUSTER -p $PGPORT -- -A trust
 
 # TODO: have base.mk support dynamic sudo
