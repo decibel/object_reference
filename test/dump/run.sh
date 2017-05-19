@@ -45,9 +45,10 @@ check_log $create_log creation
 
 echo Running dump and restore
 # No real need to cat the log on failure here; psql will generate an error and even if not verify will almost certainly catch it
-createdb test_load && psql -c '\df pg_getobject_address' test_load && (echo 'BEGIN;' && pg_dump test_dump && echo 'COMMIT;') | psql -q -v VERBOSITY=verbose -v ON_ERROR_STOP=true test_load > $restore_log
+createdb test_load && PAGER='' psql -c '\df pg_get_object_address' test_load || die 5 'crap'
+(echo 'BEGIN;' && pg_dump test_dump && echo 'COMMIT;') | psql -q -v VERBOSITY=verbose -v ON_ERROR_STOP=true test_load > $restore_log
 rc=$?
-if [ $rc ne 0 ]; then
+if [ $rc -ne 0 ]; then
   cat $restore_log
   die 4 "Unable to load database"
 fi
