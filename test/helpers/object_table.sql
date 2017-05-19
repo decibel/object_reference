@@ -101,6 +101,8 @@ $body$;
 
 CREATE FUNCTION test__drop(
   o test_object
+  , ref_table text = 'obj_ref'
+  , fkey_name name = 'obj_ref_object_id_fkey'
 ) RETURNS SETOF text LANGUAGE plpgsql AS $body$
 DECLARE
   c_sql CONSTANT text := test__command_sql(o, 'drop');
@@ -115,13 +117,20 @@ BEGIN
   RETURN NEXT throws_ok(
     c_sql
     , '23503'
-    , 'update or delete on table "object" violates foreign key constraint "obj_ref_object_id_fkey" on table "obj_ref"'
+    , format(
+      'update or delete on table "object" violates foreign key constraint "%s" on table "%s"'
+      , fkey_name
+      , ref_table
+    )
     , 'Drop should fail while reference exists'
   );
 
-  DELETE FROM obj_ref WHERE seq = o.seq;
-
-  RETURN NEXT lives_ok(c_sql, c_sql);
+  IF ref_table = 'obj_ref' THEN
+    DELETE FROM obj_ref WHERE seq = o.seq;
+    RETURN NEXT lives_ok(c_sql, c_sql);
+  ELSE
+    RETURN NEXT skip('ref_table != "obj_ref"');
+  END IF;
 END
 $body$;
 

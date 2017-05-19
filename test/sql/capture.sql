@@ -84,7 +84,7 @@ SELECT lives_ok(
 -- Start capture
 SELECT is(
   object_reference.capture__start('TEMP object capture test group 1')
-  , 1
+  , 1 -- Next level #
   , 'Start capture for group 1'
 );
 SELECT is_empty(

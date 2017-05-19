@@ -187,6 +187,7 @@ CREATE TABLE _object_reference.object(
     */
 );
 SELECT __object_reference.safe_dump('_object_reference.object');
+SELECT __object_reference.safe_dump('_object_reference.object_object_id_seq');
 GRANT REFERENCES ON _object_reference.object TO object_reference__dependency;
 
 CREATE TABLE _object_reference._object_oid(
@@ -356,7 +357,7 @@ BEGIN
   IF object_type IS NULL THEN
     -- Should definitely exist
     SELECT INTO STRICT object_type, classid, objid, objsubid
-        o.object_type, a.classid, a.objid, a.subobjid
+        o.object_type, a.classid, a.objid, a.objsubid
       FROM _object_reference.object o
         , pg_catalog.pg_get_object_address(o.object_type::text, o.object_names, o.object_args) a
       WHERE o.object_id = _object_oid__add.object_id
@@ -1365,6 +1366,8 @@ BEGIN
       USING HINT = 'Did you not start a transaction? Did you forget to call object_reference.capture__stop()?'
     ;
   END IF;
+
+  RETURN NULL;
 END
 $body$
   , 'Trigger function to ensure capture__stop() is called an appropriate number of times.'
@@ -1507,15 +1510,6 @@ END
 $body$
   , 'Event trigger function to drop object records when objects are removed.'
 );
-
-/*
-CREATE OR REPLACE FUNCTION snitch() RETURNS event_trigger AS $$
-BEGIN
-    RAISE WARNING 'snitch: % %', tg_event, tg_tag;
-END;
-$$ LANGUAGE plpgsql;
-CREATE EVENT TRIGGER snitch ON ddl_command_start EXECUTE PROCEDURE snitch();
-*/
 
 CREATE EVENT TRIGGER zzz__object_reference_drop
   ON sql_drop
